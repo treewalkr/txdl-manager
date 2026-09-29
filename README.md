@@ -4,7 +4,7 @@ A minimal download manager for [Transmission](https://transmissionbt.com/), buil
 
 > download + seed on the internal SSD → **clean up unselected junk files** → **move the torrent to the external HDD** → **remove it from Transmission**
 
-SvelteKit 2 / Svelte 5 (runes) frontend over the Transmission RPC API, packaged with Docker Compose. Runs locally on your Mac next to your native Transmission; no data leaves your machine.
+SvelteKit 2 / Svelte 5 (runes) frontend over the Transmission RPC API, packaged with Docker Compose. Runs on the **Bun** runtime (`bun install` / `bun test`, `oven/bun` Docker image executing the adapter-node build); locally on your Mac next to your native Transmission — no data leaves your machine.
 
 ## Features (MVP)
 
@@ -61,8 +61,8 @@ open http://localhost:3000
 A mock RPC server plus fixture junk files let you develop and test the full UI:
 
 ```bash
-npm install
-npm run dev:mock   # starts scripts/mock-transmission.mjs on :9091, then vite dev
+bun install
+bun run dev:mock   # starts scripts/mock-transmission.mjs on :9091, then vite dev
 ```
 
 Then set the env the mock expects (SvelteKit loads `.env` in dev):
@@ -79,8 +79,8 @@ The mock reports download dir `/mock-downloads`, mapped to `dev-fixtures/` on di
 ## Tests
 
 ```bash
-npm test    # vitest: path containment guard, RPC session handshake, junk selection/deletion
-npm run check  # svelte-check
+bun test       # bun:test: path containment guard, RPC session handshake, junk selection/deletion
+bun run check  # svelte-check
 ```
 
 ## Configuration reference

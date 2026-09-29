@@ -1,19 +1,20 @@
 # --- build stage ---
-FROM node:22-alpine AS build
+FROM oven/bun:1 AS build
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
 COPY . .
-RUN npm run build
+RUN bun run build
 
 # --- run stage ---
-# All dependencies are devDependencies and Vite bundles the server, so the
-# final image only needs the adapter-node output.
-FROM node:22-alpine AS run
+# The adapter-node output is executed by the Bun runtime (drop-in: Bun
+# implements the node: APIs the server uses). --smol = memory-optimized GC
+# for an always-on local container.
+FROM oven/bun:1-alpine AS run
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/build ./build
-USER node
+USER bun
 EXPOSE 3000
-CMD ["node", "build"]
+CMD ["bun", "--smol", "build/index.js"]

@@ -31,11 +31,14 @@ async function resolveUrlHost(url: string): Promise<string> {
 	}
 }
 
+/** Call signature the client actually uses (Bun's `typeof fetch` adds a required `preconnect`, which mocks don't have). */
+export type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
 export interface ClientOptions {
 	baseUrl?: string;
 	username?: string;
 	password?: string;
-	fetchImpl?: typeof fetch;
+	fetchImpl?: FetchLike;
 }
 
 const TORRENT_LIST_FIELDS = [
@@ -82,7 +85,7 @@ export class TransmissionClient {
 	async rpc<T>(method: string, args: Record<string, unknown> = {}): Promise<T> {
 		const cfg = env();
 		const url = await resolveUrlHost(this.opts.baseUrl ?? cfg.transmissionUrl);
-		const fetchImpl = this.opts.fetchImpl ?? fetch;
+		const fetchImpl: FetchLike = this.opts.fetchImpl ?? fetch;
 
 		for (let attempt = 0; attempt < 2; attempt++) {
 			const headers: Record<string, string> = { 'content-type': 'application/json' };

@@ -1,37 +1,24 @@
-# txdl-manager — MVP Transmission download manager (SvelteKit + Svelte 5 + Docker)
+# Switch txdl-manager runtime from Node.js to Bun (+ optimize for Bun)
 
-Empty project, built from scratch. Workflow it serves: **seed on SSD → clean unselected/partial junk files → relocate torrent to external HDD → remove torrent**.
+## Decision: `adapter-node` executed by Bun
+Keep the official `@sveltejs/adapter-node` output and run it with the Bun runtime. Bun implements every Node API this app uses (`node:fs/promises`, `node:path`, `node:dns/promises`, global `fetch`, `AbortSignal.timeout`, `node:http` in the mock), so **zero server-code changes** — while everything around the code becomes fully Bun: `bun install`, `bun test`, `bun run`, `oven/bun` Docker image. The community `adapter-bun` (native `Bun.serve()`) was considered and rejected: third-party, can lag SvelteKit 2.63's new vite-plugin setup, and its marginal HTTP gain isn't worth the breakage risk for a local tool.
 
-## Architecture
-- SvelteKit 2 + Svelte 5 (runes) + TypeScript, `@sveltejs/adapter-node`.
-- All Transmission RPC goes through SvelteKit server routes (avoids CORS, centralizes the `X-Transmission-Session-Id` 409 handshake, keeps config server-side).
-- Junk-file deletion runs in the app container against the mounted download dir (RPC can only delete whole-torrent data, so the app does file-level deletes itself).
-- UI polls `/api/state` every 2s (pauses when tab hidden). Hand-rolled dark CSS, no UI framework.
+## Step 0 — Tooling
+`bun --version`; if missing, `brew install bun`.
 
-## Config (`.env`, read by compose — `.env.example` provided)
-- `TRANSMISSION_RPC_URL` — default `http://host.docker.internal:63825/transmission/rpc`
-- `HOST_DOWNLOAD_DIR` (mac SSD path) mounted read-write at container `/data`
-- `MOVE_DESTINATION` — HDD path preset for the Move dialog
-- App bound to `127.0.0.1:3000` only (no auth, local tool)
+## Changes
+1. **Lockfile/deps**: delete `package-lock.json` and `node_modules`; `bun install` (creates text `bun.lock`, committed); `bun remove -d vitest @types/node`; `bun add -d @types/bun` (bun-types also types our `node:*` imports). `svelte-check`/`typescript` stay.
+2. **package.json scripts**: `"test": "bun test"`, `"dev:mock": "bun scripts/mock-transmission.mjs & vite dev"`; `dev`/`build`/`check` unchanged (invoked via `bun run`).
+3. **Tests (3 files) → `bun:test`**: swap imports; in `tests/transmission.test.ts` replace `vi.fn<typeof fetch>()` chains with Bun `mock()` (queued responses via a closure index; assertions via `toHaveBeenCalledTimes` + Bun's call log — final API surface confirmed at implementation); `paths`/`cleanup` tests are 1:1 import swaps. Delete `vitest.config.ts`. No `bunfig.toml` needed (default discovery finds `tests/*.test.ts`).
+4. **Dockerfile → oven/bun**:
+   - build: `FROM oven/bun:1` → `COPY package.json bun.lock` → `bun install --frozen-lockfile` → `bun run build`
+   - runtime: `FROM oven/bun:1-alpine`, `USER bun`, `CMD ["bun", "--smol", "build/index.js"]` (`--smol` = memory-optimized GC, right for an always-on local container).
+5. **No changes**: server lib, mock script, `docker-compose.yml`, `.env` (PORT/ORIGIN/`host.docker.internal` behave identically under Bun; the DNS-resolve 421 workaround keeps working).
+6. **README**: npm→bun commands (`bun install`, `bun run dev:mock`, `bun test`), note Bun runtime + oven/bun image.
 
-## Server (`src/lib/server/`)
-- `transmission.ts` — typed RPC client: automatic 409/session-id retry; `session-get`, `torrent-get` (incl. `files`, `fileStats`, `secondsSeeding`, `downloadDir`), `torrent-set` (filesWanted/filesUnwanted), `torrent-remove`, `torrent-set-location`, start/stop, `torrent-add`.
-- `paths.ts` — host→container path mapping + containment guard: resolve realpath, refuse anything outside `/data` (symlinks included). Unit-tested — this protects a destructive endpoint.
-- `cleanup.ts` — junk scan/delete: files with `wanted=false` (or partial) that exist on disk → delete, prune empty parent dirs, report freed bytes.
-- Routes: `GET /api/state`, `POST /api/torrents/[id]/action` (start/stop/remove/move/set-files), `POST /api/torrents/[id]/cleanup` (`dryRun` | `delete`), `POST /api/torrents/add`.
-
-## UI
-- `/` — torrent list: filter chips (All / Downloading / Seeding / Done / Stopped), search, progress bars, speeds, ratio + seed time, "archive-ready" badge, row actions; polling with pause/resume.
-- `/torrent/[id]` — file list with wanted-checkboxes (live `filesWanted`/`filesUnwanted`), **Junk panel** (unselected files, on-disk size, delete-with-confirm), **Move to HDD** dialog (preset from `MOVE_DESTINATION`, issues `torrent-set-location`), **Remove** (list-only vs delete-data), both behind a confirm modal.
-- Runes-based store (`torrents.svelte.ts`, class + `$state`), Svelte 5 idioms (`onclick`, snippets, callback props).
-
-## Dev & verification
-- `scripts/mock-transmission.mjs` — dev-only fake RPC (torrents incl. unselected files) since the live RPC on 63825 isn't answering right now; used for building/verifying the UI and API end-to-end.
-- Vitest: path-containment guard, session-id retry, junk-selection logic.
-- Verify `npm run build` + `node build` against mock; then start Docker Desktop and `docker compose up --build`, check UI in browser + curl the API.
-
-## Deliverables
-`Dockerfile` (multi-stage, node:22-alpine), `docker-compose.yml`, `.env.example`, README (incl. the one-time Transmission prerequisite: `rpc-bind-address: 0.0.0.0` + whitelist so the container can reach host RPC on 63825), `git init` + initial commit.
-
-## Order
-scaffold → server lib + tests → API routes → store → pages/components → mock server → Docker → README → build/run verification.
+## Verification
+- `bun test` → 22/22
+- `bun run check` → 0 errors
+- `bun run build`, then smoke-run `bun build/index.js` on the host against real Transmission (localhost:9091) → `/api/state` returns your torrents
+- `docker compose up -d --build` → `/api/state` via `host.docker.internal` (proves the 421 DNS fix under Bun) → torrents; UI serves on 127.0.0.1:3000
+- `git commit`
