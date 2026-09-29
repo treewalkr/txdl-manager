@@ -1,3 +1,4 @@
+import { lookup } from 'node:dns/promises';
 import type { SessionInfo, Torrent } from '$lib/types';
 import { env } from './config';
 
@@ -8,6 +9,25 @@ export class TransmissionError extends Error {
 	) {
 		super(message);
 		this.name = 'TransmissionError';
+	}
+}
+
+/**
+ * Replace the URL's hostname with its resolved IP. Transmission's default
+ * rpc-host-whitelist rejects requests whose Host header is a DNS name it
+ * doesn't know (HTTP 421) but always accepts IP Host headers — this lets the
+ * container talk to the Mac via host.docker.internal without editing
+ * Transmission's settings. Falls back to the original URL if resolution fails.
+ */
+async function resolveUrlHost(url: string): Promise<string> {
+	try {
+		const u = new URL(url);
+		if (u.hostname === 'localhost') return url;
+		const { address } = await lookup(u.hostname);
+		u.hostname = address; // URL adds IPv6 brackets automatically
+		return u.href;
+	} catch {
+		return url;
 	}
 }
 
@@ -61,7 +81,7 @@ export class TransmissionClient {
 
 	async rpc<T>(method: string, args: Record<string, unknown> = {}): Promise<T> {
 		const cfg = env();
-		const url = this.opts.baseUrl ?? cfg.transmissionUrl;
+		const url = await resolveUrlHost(this.opts.baseUrl ?? cfg.transmissionUrl);
 		const fetchImpl = this.opts.fetchImpl ?? fetch;
 
 		for (let attempt = 0; attempt < 2; attempt++) {
