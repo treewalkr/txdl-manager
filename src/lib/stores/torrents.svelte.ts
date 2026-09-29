@@ -146,13 +146,34 @@ class TorrentStore {
 		}
 	};
 
+	/** Bulk action on several torrents at once (list multi-select). */
+	actMany = async (ids: number[], body: Record<string, unknown>): Promise<boolean> => {
+		if (ids.length === 0) return false;
+		try {
+			const res = await fetch('/api/torrents/action', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ ...body, ids })
+			});
+			const json = await res.json().catch(() => null);
+			if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
+			this.setFlash(json?.message ?? 'Done');
+			await this.refresh();
+			return true;
+		} catch (e) {
+			this.setFlash(e instanceof Error ? e.message : String(e), 'error');
+			return false;
+		}
+	};
+
 	/** Manually remove from / restore to the HR group (persisted server-side). */
-	setHr = async (id: number, op: 'exclude' | 'include'): Promise<boolean> => {
+	setHr = async (ids: number[], op: 'exclude' | 'include'): Promise<boolean> => {
+		if (ids.length === 0) return false;
 		try {
 			const res = await fetch('/api/hr', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ id, op })
+				body: JSON.stringify({ ids, op })
 			});
 			const json = await res.json().catch(() => null);
 			if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);

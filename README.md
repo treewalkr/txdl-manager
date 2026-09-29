@@ -9,6 +9,7 @@ SvelteKit 2 / Svelte 5 (runes) frontend over the Transmission RPC API, packaged 
 ## Features (MVP)
 
 - **Torrent list** — live (2s polling) status, progress, speeds, ratio, seed time, ETA; filter chips, search, sorting.
+- **Multi-select + right-click** — select torrents Finder/Explorer-style (plain click, ⌘/Ctrl+click to toggle, Shift+click for ranges, ⌘A for all visible, Esc to clear) and act on many at once. The right-click context menu (and a floating selection bar) offers Resume / Pause / Verify, bulk Move to HDD, bulk Remove, HR group changes, Open details, and Copy magnet link. The menu acts on the whole selection when you right-click a selected row — like in Finder.
 - **Hit & Run group** — an `HR` chip and violet badges track the seed time each torrent still owes by size (≤ 1 GiB → 12 h · ≤ 5 GiB → 24 h · > 5 GiB → 48 h). Torrents move out of HR automatically once they've seeded long enough; you can manually remove one from the group (or add it back) on its detail page.
 - **Archive-ready badge** — highlights torrents that are complete and have seeded enough (ratio ≥ 2 or ≥ 72h seeded), i.e. ready to move and remove.
 - **Per-torrent detail** — file list with wanted/unwanted checkboxes (`filesWanted` / `filesUnwanted`).

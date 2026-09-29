@@ -1,44 +1,32 @@
-# Hit & Run (HR) group — seed-time obligation tracking
+# Multi-select + right-click context menu for the torrent list
 
-## Semantics (the contract)
+## UX — mimics Finder / Windows Explorer
 
-**Rule** — required seed time by torrent size (`sizeWhenDone`, GiB = 1024³ to match the UI's `fmtBytes`):
-| Size | Must seed |
-|---|---|
-| ≤ 1 GiB | 12 h |
-| ≤ 5 GiB | 24 h |
-| > 5 GiB | 48 h |
+**Selection model** (no checkboxes, OS-style):
+- Plain click selects one row (clears the rest); **⌘/Ctrl+click** toggles a row; **Shift+click** selects the range from the last anchor row; **⌘A** selects all currently *filtered* rows; **Esc** or a click on empty space clears.
+- Selected rows get a blue tint (existing HR/ready edge accents coexist). Selection survives the 2s polling, filter/search/sort changes, and switching back; ids of torrents removed elsewhere auto-drop.
+- Dragging to select *text* won't clobber the selection (guarded via `getSelection()`).
+- The torrent-name link still opens the detail page; the per-row pause/✕ buttons keep working without touching selection.
 
-- `met` := `secondsSeeding >= required` (both fields already fetched by `TORRENT_LIST_FIELDS` — no RPC changes).
-- **In HR** := `!met && !excluded(id)` — every torrent owing seed time shows in HR, including still-downloading/paused ones (seed clock reads 0).
-- **Auto-graduation**: derived on every 2 s poll; when seed time crosses the requirement the torrent silently moves back to normal (badge/chip membership drop automatically).
-- **Manual "Remove from HR"** = exclusion: stays out of HR even while owing, persisted across restarts.
-- **Manual "Add to HR"** = restore: clears the exclusion so the rule applies again. (Per your answer, manual adds graduate by the rule — so "Add to HR" is only offered for torrents you previously removed; everything not-met is already in HR.)
+**Right-click context menu** on rows (native menu suppressed):
+- Finder semantics: if the right-clicked row is part of the current selection, the menu acts on the **whole selection**; otherwise it acts on just that row (and selects it).
+- Items: **Open details**, **Copy magnet link** (`magnet:?xt=urn:btih:{hashString}&dn=…` via clipboard, single target only) · **Resume**, **Pause**, **Verify** · **Remove from HR (n)** / **Add back to HR (n)** shown when applicable among targets · **Move to HDD…** · **Remove…** (danger, opens confirm modal).
+- Closes on any click, Esc, scroll, or resize; position clamped to the viewport.
+
+**Selection bar** — floating pill at bottom-center whenever anything is selected: "N selected · total size" + Resume / Pause / Verify / HR toggles (contextual) / Move to HDD… / Remove… / ✕ clear.
 
 ## Code changes
 
-1. **`src/lib/hr.ts`** (new, shared client+server): `requiredSeedSeconds(size)` with the 3 buckets; `hrInfo(t, excluded)` → `{ required, seeded, remaining, met, inGroup, excluded }`; `hrRuleHint()` ("≤ 1 GiB → 12 h · ≤ 5 GiB → 24 h · > 5 GiB → 48 h").
-2. **`src/lib/server/hr-state.ts`** (new): JSON file `{ version: 1, excluded: number[] }` at path from new env `HR_STATE_FILE` (default `.data/hr-state.json` resolved vs cwd). `getHrState()` (missing/corrupt → empty), `setHrExcluded(id, on)` — read-modify-write behind a promise-chain mutex, atomic tmp+rename, mkdir -p parent. Stale ids of removed torrents are harmless (no pruning).
-3. **`src/lib/server/config.ts`**: add `hrStateFile` to `env()` (not in publicConfig).
-4. **`src/routes/api/hr/+server.ts`** (new): `GET` → `{ excluded }`; `POST { id, op: 'exclude' | 'include' }` → validates, writes state, returns `{ message, excluded }`. Errors via existing `fail()`.
-5. **`src/routes/api/state/+server.ts`**: include `hr: { excluded }` in the payload (read per poll — tiny file).
-6. **`src/lib/stores/torrents.svelte.ts`**: `$state hrExcluded: number[]` filled in `refresh()`; new `setHr(id, op)` → POST `/api/hr`, update set locally from response + `setFlash` (no full refresh needed).
-7. **`src/lib/status.ts`**: `FilterKey` gains `'hr'`; `matchesFilter(t, filter, hrExcluded?: number[])` — `'hr'` case delegates to `hrInfo`.
-8. **`src/lib/format.ts`**: `fmtHours(sec)` — compact "5.2h" / "12h" (one decimal < 10 h, integer above).
-9. **`src/routes/+page.svelte`**: `HR` chip second in `FILTERS` (after All) + count; pass `store.hrExcluded` to `matchesFilter` in `counts`/`filtered`; in the name cell next to `ready-badge`: `<span class="hr-badge">HR {fmtHours(seeded)}/{fmtHours(required)}</span>` when in group; `class:hr` row for a violet left-edge inset (ready inset wins if both).
-10. **`src/routes/torrent/[id]/+page.svelte`**: new "Hit & Run" card (between stat-grid and junk card, same `.card` recipe): the torrent's bucket + requirement, `ProgressBar` of `seeded/required`, status line ("In HR — seeded 5h 12m of 24h · 18h 48m left" / "Requirement met ✓" / "Removed from HR — still owes 18h 48m"), contextual buttons **Remove from HR** / **Add back to HR**, hint with the full rule.
-11. **`src/app.css`**: `.hr-badge` (violet pill — `--violet` token is currently unused) + `tr.hr td:first-child` inset.
-12. **`scripts/mock-transmission.mjs`**: set id 2 (ubuntu, 3.8 GiB seeding) `secondsSeeding: 20h` — demos a live-counting HR member (tick already adds 2 s/2 s); stays archive-ready via ratio 7.3, showing HR ⊥ archive-ready. id 1 (8.4 GiB downloading, 48 h bucket) and id 4 (620 MiB, 12 h bucket) demo owing states; id 3 demos met.
-13. **`docker-compose.yml`**: bind `./.data:/state` + env `HR_STATE_FILE=/state/hr-state.json` — same host dir as dev default, survives rebuilds.
-14. **`.gitignore`**: `.data/`. **`README.md`**: HR section (rule table, manual remove/restore, `HR_STATE_FILE`).
-
-## Tests
-- `tests/hr.test.ts`: bucket boundaries (1 GiB±1, 5 GiB±1), `hrInfo` combos (met/excluded/remaining), `matchesFilter('hr')` with/without exclusion.
-- `tests/hr-state.test.ts`: mkdtemp + `HR_STATE_FILE` env (same lazy-env pattern as cleanup tests): missing file → empty, exclude/include roundtrip persists, corrupt JSON → fresh.
-- Existing 24 tests stay green.
+1. **`src/lib/selection.ts`** (new): pure `applySelection(current, clicked, mods, orderedIds, anchor)` implementing click/meta/shift(+meta) semantics with anchor tracking — unit-tested in `tests/selection.test.ts`.
+2. **`src/routes/api/torrents/action/+server.ts`** (new): bulk endpoint, `POST { action: start|stop|verify|remove|move, ids: number[], deleteData?, location?, move? }`, reusing the existing array-based RPC helpers (`startTorrents(ids)` etc. already take arrays). Validated ids, count-aware messages. `set-files` stays on the per-id route.
+3. **`/api/hr` + `hr-state.ts`**: POST accepts `ids: number[]`; `setHrExcluded(ids, on)` generalized to arrays (same mutex + atomic write); pluralized messages.
+4. **Store**: `actMany(ids, body)` (flash + refresh) and `setHr` takes an id array; detail-page call sites updated to `store.setHr([id], …)`.
+5. **`src/routes/+page.svelte`**: `SvelteSet` selection + anchor state; a `$effect` prunes vanished ids. All row interaction via **`svelte:window` delegation** (click → select/clear, contextmenu → menu, keydown → ⌘A/Esc, scroll/resize → close) — no per-row handlers, so no new a11y warnings; clicks on links/buttons/inputs/modals/menu are ignored by the selection logic. Rows gain `data-torrent-id` + `class:selected`. Adds the context menu markup, the selection bar, and bulk **Move** / **Remove** modals (count + total size + delete-data checkbox, reusing the Modal component).
+6. **`src/app.css`**: `tr.selected` tint, `.ctx-menu` / `.ctx-item` / `.ctx-sep`, `.sel-bar` (z-index between content and toast), `.btn.sm`.
+7. **Tests**: new selection tests; `tests/hr-state.test.ts` updated to the array API + a multi-id case. **README**: feature bullet.
 
 ## Verification
 1. `bun test` + `bun run check` → clean.
-2. `bun run dev:mock` → browser: HR chip counts 3 (ids 1, 2, 4); badges show "5.0h/48h" etc.; detail card on each state; Remove from HR → chip count drops; Add back → returns; `.data/hr-state.json` written; restart dev server → exclusion persists.
-3. `docker compose up -d --build` → live vs real Transmission: HR count over 538 torrents; exclude one, `docker compose restart app`, verify still excluded via host `./.data/hr-state.json`.
+2. `dev:mock` browser pass: click/⌘/shift/⌘A/Esc selection; menu on single + selection targets; bulk Pause of 2 mock torrents → both pause; bulk HR exclude/restore; Copy magnet; bulk Remove (list-only) removes a mock torrent; Move modal cancel.
+3. `docker compose up -d --build`; live spot check at 127.0.0.1:3000: selection + menu render across the real 538-torrent list (no destructive live actions).
 4. `git commit`.

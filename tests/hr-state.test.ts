@@ -25,29 +25,38 @@ describe('hr-state', () => {
 	});
 
 	it('persists exclusions and inclusions as valid JSON', async () => {
-		let state = await setHrExcluded(7, true);
+		let state = await setHrExcluded([7], true);
 		expect(state.excluded).toEqual([7]);
 		expect(await getHrState()).toEqual({ excluded: [7] });
 
-		state = await setHrExcluded(3, true);
+		state = await setHrExcluded([3], true);
 		expect(state.excluded).toEqual([3, 7]);
 
 		// excluding an already-excluded id is a no-op
-		state = await setHrExcluded(3, true);
+		state = await setHrExcluded([3], true);
 		expect(state.excluded).toEqual([3, 7]);
 
-		state = await setHrExcluded(7, false);
+		state = await setHrExcluded([7], false);
 		expect(state.excluded).toEqual([3]);
 
 		const raw = JSON.parse(await readFile(stateFile, 'utf8'));
 		expect(raw).toEqual({ version: 1, excluded: [3] });
 	});
 
+	it('handles several ids per call', async () => {
+		let state = await setHrExcluded([1, 2, 3], true);
+		expect(state.excluded).toEqual([1, 2, 3]);
+		state = await setHrExcluded([2], false);
+		expect(state.excluded).toEqual([1, 3]);
+		state = await setHrExcluded([1, 3], false);
+		expect(state.excluded).toEqual([]);
+	});
+
 	it('treats a corrupt file as fresh state instead of failing', async () => {
 		await writeFile(stateFile, 'not json{', 'utf8');
 		expect(await getHrState()).toEqual({ excluded: [] });
 		// and writing after corruption recovers a clean file
-		const state = await setHrExcluded(11, true);
+		const state = await setHrExcluded([11], true);
 		expect(state.excluded).toEqual([11]);
 		expect(await getHrState()).toEqual({ excluded: [11] });
 	});

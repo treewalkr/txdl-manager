@@ -40,12 +40,14 @@ export async function getHrState(): Promise<HrState> {
 // serialize read-modify-write cycles so concurrent requests can't clobber
 let queue: Promise<unknown> = Promise.resolve();
 
-export function setHrExcluded(id: number, on: boolean): Promise<HrState> {
+export function setHrExcluded(ids: number[], on: boolean): Promise<HrState> {
 	const run = queue.then(async () => {
 		const state = await getHrState();
 		const set = new Set(state.excluded);
-		if (on) set.add(id);
-		else set.delete(id);
+		for (const id of ids) {
+			if (on) set.add(id);
+			else set.delete(id);
+		}
 		const next: HrState = { excluded: [...set].sort((a, b) => a - b) };
 		const file = env().hrStateFile;
 		await mkdir(dirname(file), { recursive: true });

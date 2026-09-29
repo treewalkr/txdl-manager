@@ -191,11 +191,11 @@
 					<h3>Hit &amp; Run</h3>
 					<div class="card-actions">
 						{#if hr.inGroup}
-							<button class="btn" onclick={() => store.setHr(id, 'exclude')}>
+							<button class="btn" onclick={() => store.setHr([id], 'exclude')}>
 								Remove from HR
 							</button>
 						{:else if !hr.met}
-							<button class="btn" onclick={() => store.setHr(id, 'include')}>
+							<button class="btn" onclick={() => store.setHr([id], 'include')}>
 								Add back to HR
 							</button>
 						{/if}
