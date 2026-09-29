@@ -40,7 +40,7 @@ describe('TransmissionClient session handshake', () => {
 	it('maps network failures to a readable 502 error', async () => {
 		const fetchImpl = vi.fn<typeof fetch>().mockRejectedValue(new Error('ECONNREFUSED'));
 		const c = new TransmissionClient({ baseUrl: 'http://127.0.0.1:1/rpc', fetchImpl });
-		const err = await c.rpc('session-get').catch((e) => e);
+		const err = (await c.rpc('session-get').catch((e: unknown) => e)) as TransmissionError;
 		expect(err).toBeInstanceOf(TransmissionError);
 		expect(err.status).toBe(502);
 		expect(err.message).toContain('Cannot reach Transmission RPC');
