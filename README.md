@@ -18,19 +18,23 @@ SvelteKit 2 / Svelte 5 (runes) frontend over the Transmission RPC API, packaged 
 
 ## One-time Transmission setup
 
-Transmission binds its RPC to `127.0.0.1` by default, which the Docker container can't reach. Quit Transmission first (it overwrites settings.json on exit), then edit `~/Library/Application Support/Transmission/settings.json`:
+Enable Transmission's RPC (default port **9091**) and point `TRANSMISSION_RPC_URL` at it. The RPC port is separate from the BitTorrent peer port in Network settings — don't mix them up.
+
+**Native macOS app:** Transmission → Settings → Remote → *Enable remote access*. That's all — the Mac app listens on all interfaces, and this app resolves `host.docker.internal` to an IP so Transmission's host whitelist accepts the container's requests. If one is ever rejected with 403, add `192.168.*` to the RPC whitelist in the same panel.
+
+**Headless transmission-daemon** (settings live in `settings.json`; stop the daemon before editing, or it overwrites the file on exit):
 
 ```json
 {
 	"rpc-enabled": true,
-	"rpc-port": 63825,
+	"rpc-port": 9091,
 	"rpc-bind-address": "0.0.0.0",
 	"rpc-whitelist-enabled": true,
 	"rpc-whitelist": "127.0.0.1,::1,192.168.*"
 }
 ```
 
-`0.0.0.0` + the whitelist lets the container in via `host.docker.internal` (maps into `192.168.*`). Keep the port matching `TRANSMISSION_RPC_URL`. On untrusted networks, also enable RPC auth and set `TRANSMISSION_RPC_USERNAME` / `TRANSMISSION_RPC_PASSWORD` in `.env`.
+On untrusted networks, also enable RPC auth and set `TRANSMISSION_RPC_USERNAME` / `TRANSMISSION_RPC_PASSWORD` in `.env`.
 
 ## Usage
 
@@ -58,7 +62,7 @@ The mock's download dir maps to `dev-fixtures/` on disk, so junk cleanup really 
 | Variable | Default | Purpose |
 |---|---|---|
 | `APP_PORT` | `3000` | Local port for the UI (127.0.0.1 only) |
-| `TRANSMISSION_RPC_URL` | `http://host.docker.internal:63825/transmission/rpc` | RPC endpoint |
+| `TRANSMISSION_RPC_URL` | `http://host.docker.internal:9091/transmission/rpc` | RPC endpoint |
 | `TRANSMISSION_RPC_USERNAME` / `_PASSWORD` | — | Only if RPC auth is enabled |
 | `HOST_DOWNLOAD_DIR` | *(unset)* | Transmission's download dir on the host, mounted RW at `/data` |
 | `MOVE_DESTINATION` | *(unset)* | HDD path preset for the Move dialog |
