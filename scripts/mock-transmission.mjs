@@ -4,17 +4,19 @@
 // set-location/add, session-get) to build and test the UI without a live
 // Transmission daemon.
 //
-//   node scripts/mock-transmission.mjs          # listens on :9091
-//   MOCK_PORT=9092 node scripts/mock-transmission.mjs
+//   node scripts/mock-transmission.mjs          # listens on :9092
+//   MOCK_PORT=9095 node scripts/mock-transmission.mjs
 //
 // Pair with the app via env:
-//   TRANSMISSION_RPC_URL=http://127.0.0.1:9091/transmission/rpc \
-//   HOST_DOWNLOAD_DIR=/mock-downloads DATA_ROOT=./dev-fixtures npm run dev
+//   TRANSMISSION_RPC_URL=http://127.0.0.1:9092/transmission/rpc \
+//   HOST_DOWNLOAD_DIR=/mock-downloads DATA_ROOT=./dev-fixtures bun run dev
+//
+// (9092, not 9091, to avoid colliding with a real Transmission RPC.)
 
 import http from 'node:http';
 import crypto from 'node:crypto';
 
-const PORT = Number(process.env.MOCK_PORT ?? 9091);
+const PORT = Number(process.env.MOCK_PORT ?? 9092);
 const HOST = process.env.MOCK_HOST ?? '127.0.0.1';
 const SESSION_ID = `mock-session-${crypto.randomBytes(8).toString('hex')}`;
 const DOWNLOAD_DIR = process.env.MOCK_DOWNLOAD_DIR ?? '/mock-downloads';

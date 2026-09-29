@@ -70,6 +70,8 @@ export interface JunkEntry {
 	name: string;
 	length: number;
 	sizeOnDisk: number;
+	/** True when the on-disk leftover is a partial ".part" file (Transmission's rename-partial-files). */
+	partial: boolean;
 }
 
 export interface CleanupScanResult {

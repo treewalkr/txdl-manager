@@ -193,8 +193,9 @@
 				</div>
 			</div>
 			<p class="hint">
-				Files you unchecked in the list below that still exist on disk. Transmission keeps them
-				around after you deselect — delete them here to reclaim space before archiving.
+				Files you unchecked in the list below that still exist on disk — including partial
+				<code>.part</code> leftovers from when they were still downloading. Transmission keeps
+				them around after you deselect — delete them here to reclaim space before archiving.
 			</p>
 			{#if scan && !scan.mapped}
 				<p class="warn">
@@ -213,7 +214,9 @@
 					<ul class="junk-list">
 						{#each scan.junk as j (j.index)}
 							<li>
-								<span class="mono">{j.name}</span>
+								<span class="mono">
+									{j.name}{#if j.partial}<span class="part-tag" title="Partial file — Transmission stores incomplete files with a .part suffix">.part</span>{/if}
+								</span>
 								<span class="dim">{fmtBytes(j.sizeOnDisk)}</span>
 							</li>
 						{/each}

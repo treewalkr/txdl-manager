@@ -11,7 +11,7 @@ SvelteKit 2 / Svelte 5 (runes) frontend over the Transmission RPC API, packaged 
 - **Torrent list** — live (2s polling) status, progress, speeds, ratio, seed time, ETA; filter chips, search, sorting.
 - **Archive-ready badge** — highlights torrents that are complete and have seeded enough (ratio ≥ 2 or ≥ 72h seeded), i.e. ready to move and remove.
 - **Per-torrent detail** — file list with wanted/unwanted checkboxes (`filesWanted` / `filesUnwanted`).
-- **Junk cleanup** — scans files you unselected that still exist on disk, shows the space they waste, and deletes them (plus empty directories they leave behind). Guarded by a path-containment check with unit tests.
+- **Junk cleanup** — scans files you unselected that still exist on disk, shows the space they waste, and deletes them — including partial `.part` leftovers (Transmission's rename-partial-files) — plus empty directories they leave behind. Guarded by a path-containment check with unit tests.
 - **Move to HDD** — issues `torrent-set-location` to relocate the data, with your HDD path preset.
 - **Remove** — from list only, or with deleting data, behind a confirmation.
 - **Add** — magnet link or .torrent URL.
@@ -62,14 +62,14 @@ A mock RPC server plus fixture junk files let you develop and test the full UI:
 
 ```bash
 bun install
-bun run dev:mock   # starts scripts/mock-transmission.mjs on :9091, then vite dev
+bun run dev:mock   # starts scripts/mock-transmission.mjs on :9092, then vite dev
 ```
 
 Then set the env the mock expects (SvelteKit loads `.env` in dev):
 
 ```bash
 # .env (dev only)
-TRANSMISSION_RPC_URL=http://127.0.0.1:9091/transmission/rpc
+TRANSMISSION_RPC_URL=http://127.0.0.1:9092/transmission/rpc
 HOST_DOWNLOAD_DIR=/mock-downloads
 DATA_ROOT=./dev-fixtures
 ```

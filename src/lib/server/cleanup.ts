@@ -4,6 +4,8 @@ import type { CleanupDeleteResult, CleanupScanResult, FileStat, Torrent, Torrent
 import { env } from './config';
 import { mapHostPath, resolveContained } from './paths';
 
+const PART_SUFFIX = '.part';
+
 export interface JunkCandidate {
 	index: number;
 	file: TorrentFile;
@@ -16,6 +18,16 @@ export function pickJunk(files: TorrentFile[], stats: FileStat[]): JunkCandidate
 		if (stats[i] && stats[i].wanted === false) out.push({ index: i, file: files[i] });
 	}
 	return out;
+}
+
+/**
+ * Actual on-disk names a torrent file may occupy: the final name, and — while
+ * the file is incomplete, with Transmission's default rename-partial-files —
+ * the name plus ".part". An unselected file's leftover is usually the .part
+ * variant (deselected mid-download), so both must be checked.
+ */
+export function diskVariants(fileName: string): string[] {
+	return fileName.endsWith(PART_SUFFIX) ? [fileName] : [fileName, fileName + PART_SUFFIX];
 }
 
 /** Actual bytes occupied on disk (sparse/preallocated aware), 0 when absent. */
@@ -44,14 +56,23 @@ export async function scanJunk(detail: Torrent): Promise<CleanupScanResult> {
 	}
 
 	for (const { index, file } of pickJunk(detail.files ?? [], detail.fileStats ?? [])) {
-		const hostPath = posix.join(detail.downloadDir, file.name);
 		let sizeOnDisk = 0;
-		try {
-			sizeOnDisk = await diskUsage(mapHostPath(hostPath, cfg.hostDownloadDir, cfg.dataRoot));
-		} catch {
-			// individual unmapped file — reported with 0, delete will surface the error
+		let partial = false;
+		for (const variant of diskVariants(file.name)) {
+			try {
+				const mapped = mapHostPath(
+					posix.join(detail.downloadDir, variant),
+					cfg.hostDownloadDir,
+					cfg.dataRoot
+				);
+				const bytes = await diskUsage(mapped);
+				sizeOnDisk += bytes;
+				if (bytes > 0 && variant !== file.name) partial = true;
+			} catch {
+				// individual unmapped file — reported with 0, delete will surface the error
+			}
 		}
-		result.junk.push({ index, name: file.name, length: file.length, sizeOnDisk });
+		result.junk.push({ index, name: file.name, length: file.length, sizeOnDisk, partial });
 	}
 	result.totalOnDisk = result.junk.reduce((s, j) => s + j.sizeOnDisk, 0);
 	return result;
@@ -70,9 +91,10 @@ async function pruneEmptyDirs(dir: string, stopAt: string): Promise<void> {
 }
 
 /**
- * Delete every unselected file of this torrent that exists on disk. The torrent
- * detail must be fetched fresh by the caller right before calling (we never
- * trust stale UI state for a destructive operation).
+ * Delete every unselected file of this torrent that exists on disk — checking
+ * both the final name and its ".part" variant. The torrent detail must be
+ * fetched fresh by the caller right before calling (we never trust stale UI
+ * state for a destructive operation).
  */
 export async function deleteJunk(detail: Torrent): Promise<CleanupDeleteResult> {
 	const cfg = env();
@@ -83,16 +105,20 @@ export async function deleteJunk(detail: Torrent): Promise<CleanupDeleteResult> 
 	const rootReal = await resolveContained(cfg.dataRoot, cfg.dataRoot).catch(() => null);
 
 	for (const entry of scan.junk) {
-		const hostPath = posix.join(detail.downloadDir, entry.name);
 		try {
-			const mapped = mapHostPath(hostPath, cfg.hostDownloadDir, cfg.dataRoot);
-			const resolved = await resolveContained(cfg.dataRoot, mapped);
-			if (!resolved) continue; // already gone
-			const bytes = await diskUsage(resolved);
-			await unlink(resolved);
-			result.deleted++;
-			result.freed += bytes;
-			if (rootReal) await pruneEmptyDirs(posix.dirname(resolved), rootReal);
+			let removedAny = false;
+			for (const variant of diskVariants(entry.name)) {
+				const hostPath = posix.join(detail.downloadDir, variant);
+				const mapped = mapHostPath(hostPath, cfg.hostDownloadDir, cfg.dataRoot);
+				const resolved = await resolveContained(cfg.dataRoot, mapped);
+				if (!resolved) continue; // this variant is not on disk
+				const bytes = await diskUsage(resolved);
+				await unlink(resolved);
+				result.freed += bytes;
+				removedAny = true;
+				if (rootReal) await pruneEmptyDirs(posix.dirname(resolved), rootReal);
+			}
+			if (removedAny) result.deleted++;
 		} catch (e) {
 			result.failed.push({ name: entry.name, error: e instanceof Error ? e.message : String(e) });
 		}

@@ -50,15 +50,34 @@ function makeDetail(): Torrent {
 			{ name: 'T/keep.mkv', length: 100, bytesCompleted: 100 },
 			{ name: 'T/junk1.bin', length: 50, bytesCompleted: 0 },
 			{ name: 'T/sub/junk2.bin', length: 60, bytesCompleted: 0 },
-			{ name: 'T/sub/keep2.bin', length: 70, bytesCompleted: 70 }
+			{ name: 'T/sub/keep2.bin', length: 70, bytesCompleted: 70 },
+			// wanted file, still downloading: exists on disk only as ".part"
+			{ name: 'T/in-progress.mkv', length: 80, bytesCompleted: 40 }
 		],
 		fileStats: [
 			{ bytesCompleted: 100, wanted: true, priority: 0 },
 			{ bytesCompleted: 0, wanted: false, priority: 0 },
 			{ bytesCompleted: 0, wanted: false, priority: 0 },
-			{ bytesCompleted: 70, wanted: true, priority: 0 }
+			{ bytesCompleted: 70, wanted: true, priority: 0 },
+			{ bytesCompleted: 40, wanted: true, priority: 0 }
 		]
 	};
+}
+
+async function writeFixtures(withPartJunk: boolean) {
+	await rm(join(dataRoot, 'T'), { recursive: true, force: true });
+	await mkdir(join(dataRoot, 'T/sub'), { recursive: true });
+	await writeFile(join(dataRoot, 'T/keep.mkv'), 'a'.repeat(100));
+	if (withPartJunk) {
+		// junk1 was deselected mid-download: only the .part leftover exists
+		await writeFile(join(dataRoot, 'T/junk1.bin.part'), 'b'.repeat(50));
+	} else {
+		await writeFile(join(dataRoot, 'T/junk1.bin'), 'b'.repeat(50));
+	}
+	await writeFile(join(dataRoot, 'T/sub/junk2.bin'), 'c'.repeat(60));
+	await writeFile(join(dataRoot, 'T/sub/keep2.bin'), 'd'.repeat(70));
+	// wanted file, still downloading (must never be touched)
+	await writeFile(join(dataRoot, 'T/in-progress.mkv.part'), 'e'.repeat(40));
 }
 
 beforeAll(async () => {
@@ -81,38 +100,51 @@ describe('pickJunk', () => {
 
 describe('scanJunk / deleteJunk', () => {
 	it('reports only unselected files that exist on disk', async () => {
-		await mkdir(join(dataRoot, 'T/sub'), { recursive: true });
-		await writeFile(join(dataRoot, 'T/keep.mkv'), 'a'.repeat(100));
-		await writeFile(join(dataRoot, 'T/junk1.bin'), 'b'.repeat(50));
-
+		await writeFixtures(false);
 		const scan = await scanJunk(makeDetail());
 		expect(scan.mapped).toBe(true);
 		expect(scan.junk.map((j) => j.name)).toEqual(['T/junk1.bin', 'T/sub/junk2.bin']);
 		expect(scan.junk[0].sizeOnDisk).toBeGreaterThan(0);
-		expect(scan.junk[1].sizeOnDisk).toBe(0); // not on disk
+		expect(scan.junk[0].partial).toBe(false);
+		expect(scan.junk[1].sizeOnDisk).toBeGreaterThan(0);
+		expect(scan.junk[1].partial).toBe(false);
 	});
 
-	it('deletes junk, spares wanted files, prunes empty dirs, reports freed bytes', async () => {
-		await rm(join(dataRoot, 'T'), { recursive: true, force: true });
-		await mkdir(join(dataRoot, 'T/sub'), { recursive: true });
-		await writeFile(join(dataRoot, 'T/keep.mkv'), 'a'.repeat(100));
-		await writeFile(join(dataRoot, 'T/junk1.bin'), 'b'.repeat(50));
-		await writeFile(join(dataRoot, 'T/sub/junk2.bin'), 'c'.repeat(60));
-		await writeFile(join(dataRoot, 'T/sub/keep2.bin'), 'd'.repeat(70));
+	it('finds unselected files that only exist as .part leftovers', async () => {
+		await writeFixtures(true);
+		const scan = await scanJunk(makeDetail());
+		expect(scan.junk[0].name).toBe('T/junk1.bin'); // RPC reports the final name
+		expect(scan.junk[0].sizeOnDisk).toBeGreaterThan(0);
+		expect(scan.junk[0].partial).toBe(true);
+		expect(scan.totalOnDisk).toBeGreaterThan(0);
+	});
 
+	it('deletes junk (including .part leftovers), spares wanted .part files, prunes empty dirs', async () => {
+		await writeFixtures(true);
 		const result = await deleteJunk(makeDetail());
 		expect(result.failed).toEqual([]);
 		expect(result.deleted).toBe(2);
 		expect(result.freed).toBeGreaterThan(0);
 
-		// wanted files untouched
+		// wanted files untouched — including the in-progress .part
 		await expect(stat(join(dataRoot, 'T/keep.mkv'))).resolves.toBeTruthy();
-		await expect(stat(join(dataRoot, 'T/sub/keep2.bin'))).resolves.toBeTruthy();
-		// junk gone
+		await expect(stat(join(dataRoot, 'T/in-progress.mkv.part'))).resolves.toBeTruthy();
+		// junk gone — both the final-name and .part variants
 		await expect(stat(join(dataRoot, 'T/junk1.bin'))).rejects.toThrow();
-		await expect(stat(join(dataRoot, 'T/sub/junk2.bin'))).rejects.toThrow();
+		await expect(stat(join(dataRoot, 'T/junk1.bin.part'))).rejects.toThrow();
 		// dirs that still hold wanted files survive
 		await expect(stat(join(dataRoot, 'T/sub'))).resolves.toBeTruthy();
+	});
+
+	it('deletes both the final name and the .part variant when both exist', async () => {
+		await writeFixtures(false);
+		// also plant the .part variant alongside the final name
+		await writeFile(join(dataRoot, 'T/junk1.bin.part'), 'f'.repeat(30));
+		const result = await deleteJunk(makeDetail());
+		expect(result.failed).toEqual([]);
+		expect(result.deleted).toBe(2);
+		await expect(stat(join(dataRoot, 'T/junk1.bin'))).rejects.toThrow();
+		await expect(stat(join(dataRoot, 'T/junk1.bin.part'))).rejects.toThrow();
 	});
 
 	it('refuses symlinked junk pointing outside the root and records the failure', async () => {
