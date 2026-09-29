@@ -1,0 +1,10 @@
+node_modules
+.svelte-kit
+build
+.git
+.zcode
+.env
+dev-fixtures
+tests
+Dockerfile
+docker-compose.yml

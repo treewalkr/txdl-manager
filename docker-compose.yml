@@ -1,0 +1,32 @@
+services:
+  app:
+    build: .
+    image: txdl-manager
+    container_name: txdl-manager
+    restart: unless-stopped
+    # localhost-only: this app has no authentication
+    ports:
+      - '127.0.0.1:${APP_PORT:-3000}:3000'
+    environment:
+      # Transmission RPC as seen from inside the container. On Docker Desktop
+      # for macOS, host.docker.internal resolves to your Mac.
+      TRANSMISSION_RPC_URL: ${TRANSMISSION_RPC_URL:-http://host.docker.internal:63825/transmission/rpc}
+      # Optional, if you enabled RPC authentication in Transmission:
+      TRANSMISSION_RPC_USERNAME: ${TRANSMISSION_RPC_USERNAME:-}
+      TRANSMISSION_RPC_PASSWORD: ${TRANSMISSION_RPC_PASSWORD:-}
+      # Container-side mount point of the download directory (keep as /data).
+      DATA_ROOT: /data
+      # The same directory as Transmission sees it on the host. Used to map
+      # torrent file paths onto /data for junk cleanup. Leave empty to disable.
+      HOST_DOWNLOAD_DIR: ${HOST_DOWNLOAD_DIR:-}
+      # Default destination preset in the "Move to HDD" dialog.
+      MOVE_DESTINATION: ${MOVE_DESTINATION:-}
+      ORIGIN: http://localhost:${APP_PORT:-3000}
+    volumes:
+      # Read-write: the app deletes unselected junk files from here.
+      # Defaults to a throwaway dir so `docker compose up` works out of the box;
+      # set HOST_DOWNLOAD_DIR in .env to your real download directory.
+      - ${HOST_DOWNLOAD_DIR:-./.docker-stub}:/data
+    extra_hosts:
+      # belt-and-braces for linux hosts; Docker Desktop provides this already
+      - 'host.docker.internal:host-gateway'
