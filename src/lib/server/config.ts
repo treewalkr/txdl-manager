@@ -20,7 +20,7 @@ export function env(): AppConfig {
 	const hrStateRaw = process.env.HR_STATE_FILE ?? '.data/hr-state.json';
 	return {
 		transmissionUrl:
-			process.env.TRANSMISSION_RPC_URL ?? 'http://host.docker.internal:63825/transmission/rpc',
+			process.env.TRANSMISSION_RPC_URL ?? 'http://host.docker.internal:9091/transmission/rpc',
 		// allow relative paths in dev (resolved against cwd)
 		dataRoot: dataRootRaw.startsWith('/') ? dataRootRaw : resolve(dataRootRaw),
 		hostDownloadDir: process.env.HOST_DOWNLOAD_DIR ?? '',
