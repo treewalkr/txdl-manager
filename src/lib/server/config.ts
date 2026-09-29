@@ -9,12 +9,15 @@ export interface AppConfig {
 	hostDownloadDir: string;
 	/** Default destination preset for the "move to HDD" dialog. */
 	moveDestination: string;
+	/** JSON file storing app-local state (HR group overrides). */
+	hrStateFile: string;
 	rpcUsername?: string;
 	rpcPassword?: string;
 }
 
 export function env(): AppConfig {
 	const dataRootRaw = process.env.DATA_ROOT ?? '/data';
+	const hrStateRaw = process.env.HR_STATE_FILE ?? '.data/hr-state.json';
 	return {
 		transmissionUrl:
 			process.env.TRANSMISSION_RPC_URL ?? 'http://host.docker.internal:63825/transmission/rpc',
@@ -22,6 +25,7 @@ export function env(): AppConfig {
 		dataRoot: dataRootRaw.startsWith('/') ? dataRootRaw : resolve(dataRootRaw),
 		hostDownloadDir: process.env.HOST_DOWNLOAD_DIR ?? '',
 		moveDestination: process.env.MOVE_DESTINATION ?? '',
+		hrStateFile: hrStateRaw.startsWith('/') ? hrStateRaw : resolve(hrStateRaw),
 		rpcUsername: process.env.TRANSMISSION_RPC_USERNAME || undefined,
 		rpcPassword: process.env.TRANSMISSION_RPC_PASSWORD || undefined
 	};

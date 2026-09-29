@@ -2,7 +2,8 @@
 	import ProgressBar from '$lib/components/ProgressBar.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { fmtBytes, fmtDuration, fmtEta, fmtPercent, fmtRatio, fmtSpeed } from '$lib/format';
+	import { fmtBytes, fmtDuration, fmtEta, fmtHours, fmtPercent, fmtRatio, fmtSpeed } from '$lib/format';
+	import { hrInfo, hrRuleHint } from '$lib/hr';
 	import {
 		archiveReadyHint,
 		isArchiveReady,
@@ -28,15 +29,18 @@
 
 	const FILTERS: { key: FilterKey; label: string }[] = [
 		{ key: 'all', label: 'All' },
+		{ key: 'hr', label: 'HR' },
 		{ key: 'downloading', label: 'Downloading' },
 		{ key: 'seeding', label: 'Seeding' },
 		{ key: 'paused', label: 'Paused' },
 		{ key: 'complete', label: 'Complete' }
 	];
 
+	const hrOf = (t: Torrent) => hrInfo(t, store.hrExcluded.includes(t.id));
+
 	const filtered = $derived.by(() => {
 		const q = query.trim().toLowerCase();
-		let list = store.torrents.filter((t) => matchesFilter(t, filter));
+		let list = store.torrents.filter((t) => matchesFilter(t, filter, store.hrExcluded));
 		if (q) list = list.filter((t) => t.name.toLowerCase().includes(q));
 		const key = sortKey;
 		const dir = sortDir;
@@ -67,6 +71,7 @@
 
 	const counts = $derived({
 		all: store.torrents.length,
+		hr: store.torrents.filter((t) => matchesFilter(t, 'hr', store.hrExcluded)).length,
 		downloading: store.torrents.filter((t) => matchesFilter(t, 'downloading')).length,
 		seeding: store.torrents.filter((t) => matchesFilter(t, 'seeding')).length,
 		paused: store.torrents.filter((t) => matchesFilter(t, 'paused')).length,
@@ -164,9 +169,17 @@
 				</thead>
 				<tbody>
 					{#each filtered as t (t.id)}
-						<tr class:ready={isArchiveReady(t, store.session)}>
+						<tr class:hr={hrOf(t).inGroup} class:ready={isArchiveReady(t, store.session)}>
 							<td class="col-name">
 								<a class="t-name" href="/torrent/{t.id}">{t.name}</a>
+								{#if hrOf(t).inGroup}
+									<span
+										class="hr-badge"
+										title="Hit &amp; Run — seeded {fmtDuration(hrOf(t).seeded)} of {fmtHours(hrOf(t).required)} ({fmtDuration(hrOf(t).remaining)} to go). {hrRuleHint()}"
+									>
+										HR {fmtHours(hrOf(t).seeded)}/{fmtHours(hrOf(t).required)}
+									</span>
+								{/if}
 								{#if isArchiveReady(t, store.session)}
 									<span class="ready-badge" title={archiveReadyHint()}>✓ ready</span>
 								{/if}

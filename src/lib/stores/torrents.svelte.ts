@@ -6,6 +6,8 @@ class TorrentStore {
 	torrents = $state<Torrent[]>([]);
 	session = $state<SessionInfo | null>(null);
 	config = $state<ClientConfig | null>(null);
+	/** Torrent ids manually removed from the HR group. */
+	hrExcluded = $state<number[]>([]);
 	detail = $state<Torrent | null>(null);
 	connected = $state(false);
 	error = $state<string | null>(null);
@@ -30,6 +32,7 @@ class TorrentStore {
 			this.torrents = body.torrents;
 			this.session = body.session;
 			this.config = body.config;
+			this.hrExcluded = body.hr?.excluded ?? [];
 			this.connected = true;
 			this.error = null;
 			this.lastUpdated = Date.now();
@@ -140,6 +143,25 @@ class TorrentStore {
 		} catch (e) {
 			this.setFlash(e instanceof Error ? e.message : String(e), 'error');
 			return null;
+		}
+	};
+
+	/** Manually remove from / restore to the HR group (persisted server-side). */
+	setHr = async (id: number, op: 'exclude' | 'include'): Promise<boolean> => {
+		try {
+			const res = await fetch('/api/hr', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ id, op })
+			});
+			const json = await res.json().catch(() => null);
+			if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
+			if (Array.isArray(json?.excluded)) this.hrExcluded = json.excluded;
+			this.setFlash(json?.message ?? 'Done');
+			return true;
+		} catch (e) {
+			this.setFlash(e instanceof Error ? e.message : String(e), 'error');
+			return false;
 		}
 	};
 

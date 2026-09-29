@@ -1,4 +1,5 @@
 import type { SessionInfo, Torrent } from './types';
+import { hrInfo } from './hr';
 
 // Transmission status enum
 export const TR_STATUS = {
@@ -40,12 +41,19 @@ export function statusInfo(t: Torrent): StatusInfo {
 }
 
 /** Coarse group used by the list filter chips (a torrent can match several). */
-export type FilterKey = 'all' | 'downloading' | 'seeding' | 'paused' | 'complete';
+export type FilterKey = 'all' | 'hr' | 'downloading' | 'seeding' | 'paused' | 'complete';
 
-export function matchesFilter(t: Torrent, filter: FilterKey): boolean {
+export function matchesFilter(
+	t: Torrent,
+	filter: FilterKey,
+	/** Torrent ids manually removed from the HR group. */
+	hrExcluded: number[] = []
+): boolean {
 	switch (filter) {
 		case 'all':
 			return true;
+		case 'hr':
+			return hrInfo(t, hrExcluded.includes(t.id)).inGroup;
 		case 'downloading':
 			return statusInfo(t).key === 'downloading' || statusInfo(t).key === 'queued';
 		case 'seeding':

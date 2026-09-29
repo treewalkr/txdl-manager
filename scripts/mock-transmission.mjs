@@ -122,11 +122,14 @@ let torrents = [
 		rateUpload: 3 * MiB + 90 * 1024,
 		uploadedEver: 24 * GiB + 120 * MiB,
 		uploadRatio: 7.3,
-		secondsSeeding: 86400 * 6 + 3600 * 11,
+		// 20h of the 24h its size bucket requires: a live HR countdown (the tick
+		// adds 2s/2s). Still archive-ready via ratio — HR and archive-ready are
+		// independent signals.
+		secondsSeeding: 3600 * 20,
 		peersConnected: 7,
 		peersGettingFromUs: 7,
 		dateAdded: now() - 86400 * 9,
-		dateDone: now() - 86400 * 6 - 3600 * 11,
+		dateDone: now() - 3600 * 20,
 		files: [{ name: 'ubuntu-27.04-live-server-amd64.iso', length: 3 * GiB + 812 * MiB, bytesCompleted: 3 * GiB + 812 * MiB }],
 		fileStats: [{ bytesCompleted: 3 * GiB + 812 * MiB, wanted: true, priority: 0 }]
 	}),

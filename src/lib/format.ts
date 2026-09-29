@@ -34,6 +34,13 @@ export function fmtEta(eta: number): string {
 	return eta > 0 ? fmtDuration(eta) : '—';
 }
 
+/** Compact hours, e.g. "5.2h" / "12h" — for the HR seed-progress badges. */
+export function fmtHours(seconds: number): string {
+	if (!Number.isFinite(seconds) || seconds < 0) return '—';
+	const h = seconds / 3600;
+	return `${h < 10 ? h.toFixed(1) : Math.round(h)}h`;
+}
+
 export function fmtDate(epochSeconds: number): string {
 	return epochSeconds > 0 ? new Date(epochSeconds * 1000).toLocaleString() : '—';
 }

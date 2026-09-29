@@ -21,12 +21,17 @@ services:
       HOST_DOWNLOAD_DIR: ${HOST_DOWNLOAD_DIR:-}
       # Default destination preset in the "Move to HDD" dialog.
       MOVE_DESTINATION: ${MOVE_DESTINATION:-}
+      # App-local state file (HR group overrides) — bind-mounted below.
+      HR_STATE_FILE: /state/hr-state.json
       ORIGIN: http://localhost:${APP_PORT:-3000}
     volumes:
       # Read-write: the app deletes unselected junk files from here.
       # Defaults to a throwaway dir so `docker compose up` works out of the box;
       # set HOST_DOWNLOAD_DIR in .env to your real download directory.
       - ${HOST_DOWNLOAD_DIR:-./.docker-stub}:/data
+      # App-local state (HR overrides). Same host dir dev mode writes to, so
+      # manual "Remove from HR" choices survive rebuilds and restarts.
+      - ./.data:/state
     extra_hosts:
       # belt-and-braces for linux hosts; Docker Desktop provides this already
       - 'host.docker.internal:host-gateway'

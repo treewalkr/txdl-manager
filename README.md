@@ -9,6 +9,7 @@ SvelteKit 2 / Svelte 5 (runes) frontend over the Transmission RPC API, packaged 
 ## Features (MVP)
 
 - **Torrent list** — live (2s polling) status, progress, speeds, ratio, seed time, ETA; filter chips, search, sorting.
+- **Hit & Run group** — an `HR` chip and violet badges track the seed time each torrent still owes by size (≤ 1 GiB → 12 h · ≤ 5 GiB → 24 h · > 5 GiB → 48 h). Torrents move out of HR automatically once they've seeded long enough; you can manually remove one from the group (or add it back) on its detail page.
 - **Archive-ready badge** — highlights torrents that are complete and have seeded enough (ratio ≥ 2 or ≥ 72h seeded), i.e. ready to move and remove.
 - **Per-torrent detail** — file list with wanted/unwanted checkboxes (`filesWanted` / `filesUnwanted`).
 - **Junk cleanup** — scans files you unselected that still exist on disk, shows the space they waste, and deletes them — including partial `.part` leftovers (Transmission's rename-partial-files) — plus empty directories they leave behind. Guarded by a path-containment check with unit tests.
@@ -56,6 +57,20 @@ open http://localhost:3000
 3. When the badge says **✓ ready** (or whenever you're done seeding): **Move to HDD…** → pick the destination → Transmission relocates the data.
 4. **Remove…** → *Remove from list* (without deleting data — the files now live on the HDD).
 
+### The Hit & Run (HR) group
+
+The HR chip collects every torrent that still owes seed time, sized by what it downloads:
+
+| Size (`sizeWhenDone`) | Must seed |
+|---|---|
+| ≤ 1 GiB | 12 h |
+| ≤ 5 GiB | 24 h |
+| > 5 GiB | 48 h |
+
+- Membership is **derived from Transmission's `secondsSeeding`** on every poll — nothing to refresh, and torrents graduate out of HR on their own the moment the requirement is met (badge and chip count update live).
+- On a torrent's page, the **Hit & Run** card shows the progress bar, time remaining, and two manual controls: **Remove from HR** (a torrent you don't intend to seed — it stays out of the group even while owing) and **Add back to HR** (restores the rule). These choices are stored in `HR_STATE_FILE` and survive restarts.
+- HR is independent of the archive-ready badge: a torrent can have met its HR seed-time rule but still be below your ratio goal, or vice versa.
+
 ## Development without Transmission
 
 A mock RPC server plus fixture junk files let you develop and test the full UI:
@@ -79,7 +94,7 @@ The mock reports download dir `/mock-downloads`, mapped to `dev-fixtures/` on di
 ## Tests
 
 ```bash
-bun test       # bun:test: path containment guard, RPC session handshake, junk selection/deletion
+bun test       # bun:test: path containment guard, RPC session handshake, junk selection/deletion, HR rule + state
 bun run check  # svelte-check
 ```
 
@@ -92,6 +107,7 @@ bun run check  # svelte-check
 | `TRANSMISSION_RPC_USERNAME` / `_PASSWORD` | — | Only if RPC auth is enabled |
 | `HOST_DOWNLOAD_DIR` | *(unset)* | Transmission's download dir on the host; mounted RW at `/data` |
 | `MOVE_DESTINATION` | *(unset)* | HDD path preset for the Move dialog |
+| `HR_STATE_FILE` | `/state/hr-state.json` in Docker, `.data/hr-state.json` in dev | Where "removed from HR" overrides are stored |
 
 ## Safety notes
 

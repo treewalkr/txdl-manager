@@ -3,7 +3,8 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import ProgressBar from '$lib/components/ProgressBar.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
-	import { fmtBytes, fmtDate, fmtDuration, fmtEta, fmtPercent, fmtRatio, fmtSpeed } from '$lib/format';
+	import { fmtBytes, fmtDate, fmtDuration, fmtEta, fmtHours, fmtPercent, fmtRatio, fmtSpeed } from '$lib/format';
+	import { hrInfo, hrRuleHint } from '$lib/hr';
 	import { statusInfo } from '$lib/status';
 	import { store } from '$lib/stores/torrents.svelte';
 	import type { CleanupDeleteResult, CleanupScanResult } from '$lib/types';
@@ -15,6 +16,7 @@
 	const torrent = $derived(detail ?? summary ?? null);
 	const files = $derived(detail?.files ?? []);
 	const stats = $derived(detail?.fileStats ?? []);
+	const hr = $derived(torrent ? hrInfo(torrent, store.hrExcluded.includes(torrent.id)) : null);
 
 	// junk panel
 	let scan = $state<CleanupScanResult | null>(null);
@@ -182,6 +184,49 @@
 				<span class="dim">active {fmtDate(torrent.activityDate)}</span>
 			</div>
 		</div>
+
+		{#if hr}
+			<div class="card hr-card">
+				<div class="card-head">
+					<h3>Hit &amp; Run</h3>
+					<div class="card-actions">
+						{#if hr.inGroup}
+							<button class="btn" onclick={() => store.setHr(id, 'exclude')}>
+								Remove from HR
+							</button>
+						{:else if !hr.met}
+							<button class="btn" onclick={() => store.setHr(id, 'include')}>
+								Add back to HR
+							</button>
+						{/if}
+					</div>
+				</div>
+				<p class="hint">
+					{hrRuleHint()} Torrents leave HR automatically once the requirement is met;
+					"Remove from HR" hides one you don't intend to seed.
+				</p>
+				<div class="hr-progress">
+					<ProgressBar value={hr.required > 0 ? hr.seeded / hr.required : 0} done={hr.met} />
+					<span class="hr-progress-label">
+						{#if hr.met}
+							<span class="ok-text">
+								Seeded {fmtDuration(hr.seeded)} of {fmtHours(hr.required)} — requirement met ✓
+							</span>
+						{:else if hr.excluded}
+							<span class="dim">
+								Removed from HR — the rule would still owe {fmtDuration(hr.remaining)}
+								(seeded {fmtDuration(hr.seeded)} of {fmtHours(hr.required)})
+							</span>
+						{:else}
+							<span>
+								Seeded <strong>{fmtDuration(hr.seeded)}</strong> of {fmtHours(hr.required)} ·
+								<strong>{fmtDuration(hr.remaining)}</strong> remaining
+							</span>
+						{/if}
+					</span>
+				</div>
+			</div>
+		{/if}
 
 		<div class="card junk-card">
 			<div class="card-head">
