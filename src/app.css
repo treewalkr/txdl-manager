@@ -20,6 +20,26 @@
 	color-scheme: dark;
 }
 
+/* light theme — set on <html data-theme="light"> by the toggle; no attribute = dark */
+html[data-theme='light'] {
+	--bg: #f4f5f8;
+	--panel: #ffffff;
+	--panel-2: #eef1f6;
+	--panel-hover: #e3e8f0;
+	--border: #cfd6e2;
+	--border-soft: #e3e8ef;
+	--text: #1c2433;
+	--muted: #5b6577;
+	--dim: #75809a;
+	--accent: #2563eb;
+	--accent-ink: #ffffff;
+	--green: #177f3d;
+	--red: #cc3d3d;
+	--amber: #9a6700;
+	--violet: #6d5ae0;
+	color-scheme: light;
+}
+
 * {
 	box-sizing: border-box;
 }
