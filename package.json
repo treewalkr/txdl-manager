@@ -6,7 +6,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
-		"dev:mock": "bun scripts/mock-transmission.mjs & vite dev",
+		"dev:mock": "bun scripts/mock-transmission.mjs & TRANSMISSION_RPC_URL=http://127.0.0.1:9092/transmission/rpc HOST_DOWNLOAD_DIR=/mock-downloads DATA_ROOT=./dev-fixtures vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
 		"test": "bun test",

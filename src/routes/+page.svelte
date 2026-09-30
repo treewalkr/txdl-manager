@@ -2,11 +2,30 @@
 	import ProgressBar from '$lib/components/ProgressBar.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
+	import { tick } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { fmtBytes, fmtDuration, fmtEta, fmtHours, fmtPercent, fmtRatio, fmtSpeed } from '$lib/format';
 	import { hrInfo, hrRuleHint } from '$lib/hr';
 	import { applySelection } from '$lib/selection';
+	import {
+		ACTIONS_WIDTH,
+		COLUMNS,
+		DEFAULT_NAME_WIDTH,
+		DEFAULT_PREFS,
+		NAME_WIDTH_MAX,
+		NAME_WIDTH_MIN,
+		PREFS_STORAGE_KEY,
+		clampNameWidth,
+		parsePrefs,
+		serializePrefs,
+		tableMinWidth,
+		visibleDataColumns,
+		type ColumnDef,
+		type ColumnKey,
+		type ColumnPrefs
+	} from '$lib/columns';
 	import {
 		archiveReadyHint,
 		isArchiveReady,
@@ -21,6 +40,35 @@
 	let query = $state('');
 	let sortKey = $state('activity');
 	let sortDir = $state(-1);
+
+	// column show/hide + Name width; the table is client-rendered only, so
+	// reading localStorage at init cannot fight SSR hydration
+	let prefs = $state<ColumnPrefs>(
+		browser ? parsePrefs(localStorage.getItem(PREFS_STORAGE_KEY)) : DEFAULT_PREFS
+	);
+
+	$effect(() => {
+		if (browser) localStorage.setItem(PREFS_STORAGE_KEY, serializePrefs(prefs));
+	});
+
+	const dataCols = $derived(visibleDataColumns(prefs));
+
+	/** Name is the always-first identity column; its def drives its header. */
+	const NAME_COL = COLUMNS[0];
+
+	function sortBy(col: ColumnDef) {
+		if (!col.sortKey) return;
+		if (sortKey === col.sortKey) sortDir = -sortDir;
+		else {
+			sortKey = col.sortKey;
+			sortDir = col.sortKey === 'name' ? 1 : -1;
+		}
+	}
+
+	function ariaSortOf(col: ColumnDef): 'ascending' | 'descending' | 'none' {
+		if (!col.sortKey || sortKey !== col.sortKey) return 'none';
+		return sortDir === 1 ? 'ascending' : 'descending';
+	}
 
 	let addOpen = $state(false);
 	let addUrl = $state('');
@@ -57,6 +105,7 @@
 	];
 
 	const hrOf = (t: Torrent) => hrInfo(t, store.hrExcluded.includes(t.id));
+	const readyOf = (t: Torrent) => isArchiveReady(t, store.hrExcluded.includes(t.id));
 
 	const filtered = $derived.by(() => {
 		const q = query.trim().toLowerCase();
@@ -176,7 +225,9 @@
 	function onWindowClick(e: MouseEvent) {
 		ctx = null;
 		const el = e.target instanceof Element ? e.target : null;
-		if (el?.closest('.ctx-menu, .modal, .modal-backdrop, .toast')) return;
+		if (el?.closest('.ctx-menu, .columns-menu, .cols-btn, .col-resize, .modal, .modal-backdrop, .toast'))
+			return;
+		if (colsOpen) closeCols();
 		// don't fight text selection or interactive controls
 		if (window.getSelection()?.toString()) return;
 		if (el?.closest('a, button, input, select, textarea, label')) return;
@@ -196,6 +247,54 @@
 		anchorId = upd.anchor;
 	}
 
+	// ---------- context menu (mouse + keyboard) ----------
+
+	let ctxMenuEl: HTMLElement | undefined = $state();
+	let ctxOpener: HTMLElement | null = null;
+
+	function nameLinkOf(id: number): HTMLAnchorElement | null {
+		return document.querySelector(`tr[data-torrent-id="${id}"] a.t-name`);
+	}
+
+	// the menu takes focus when it opens, whichever way it was opened
+	$effect(() => {
+		if (ctx && ctxMenuEl) {
+			void tick().then(() => ctxMenuEl?.querySelector<HTMLElement>('button.ctx-item')?.focus());
+		}
+	});
+
+	/** Finder semantics: the menu acts on the whole selection when the
+	 * right-clicked row is part of it, otherwise on just that row */
+	function openCtx(id: number, x: number, y: number, opener: HTMLElement | null) {
+		if (!selection.has(id)) {
+			setAllSelection([id]);
+			anchorId = id;
+		}
+		const ids = [...selection];
+		ctxOpener = opener;
+		ctx = {
+			ids,
+			single: ids.length === 1 ? (store.byId(ids[0]) ?? null) : null,
+			x: Math.max(8, Math.min(x, window.innerWidth - 250)),
+			y: Math.max(8, Math.min(y, window.innerHeight - 380))
+		};
+	}
+
+	function closeCtx() {
+		// hand focus back only when a keyboard user was inside the menu
+		if (ctxOpener && ctxMenuEl?.contains(document.activeElement)) ctxOpener.focus();
+		ctxOpener = null;
+		ctx = null;
+	}
+
+	/** Finder habit: double-click opens the row's details */
+	function onWindowDblclick(e: MouseEvent) {
+		const el = e.target instanceof Element ? e.target : null;
+		if (el?.closest('a, button, input, select, textarea, label')) return;
+		const id = rowIdFrom(e);
+		if (id !== null) void openDetail(id);
+	}
+
 	function onWindowContext(e: MouseEvent) {
 		const id = rowIdFrom(e);
 		if (id === null) {
@@ -203,22 +302,190 @@
 			return;
 		}
 		e.preventDefault();
-		// Finder semantics: the menu acts on the whole selection when the
-		// right-clicked row is part of it, otherwise on just that row
-		if (!selection.has(id)) {
-			setAllSelection([id]);
-			anchorId = id;
+		openCtx(id, e.clientX, e.clientY, nameLinkOf(id));
+	}
+
+	/** Finder-style arrows: move focus along the filtered rows and select */
+	function moveRowFocus(fromId: number, delta: 1 | -1, shift: boolean) {
+		const next = filteredIds[filteredIds.indexOf(fromId) + delta];
+		if (next === undefined) return;
+		nameLinkOf(next)?.focus();
+		const upd = applySelection(selection, next, { meta: false, shift }, filteredIds, anchorId);
+		setAllSelection([...upd.selection]);
+		anchorId = upd.anchor;
+	}
+
+	function selectAs(id: number, mods: { meta: boolean; shift: boolean }) {
+		const upd = applySelection(selection, id, mods, filteredIds, anchorId);
+		setAllSelection([...upd.selection]);
+		anchorId = upd.anchor;
+	}
+
+	// ---------- name column resize ----------
+
+	let resizing = $state(false);
+	let resizeStartX = 0;
+	let resizeStartWidth = DEFAULT_NAME_WIDTH;
+
+	function onResizePointerDown(e: PointerEvent & { currentTarget: HTMLElement }) {
+		// touch drags are allowed too; only reject non-primary mouse buttons
+		if (e.pointerType === 'mouse' && e.button !== 0) return;
+		// capture keeps the moves coming when the pointer outruns the thin
+		// handle; synthetic/unavailable pointers just drag without it
+		try {
+			e.currentTarget.setPointerCapture(e.pointerId);
+		} catch {
+			/* pointer id not capturable — the listener below still tracks */
 		}
-		const ids = [...selection];
-		const x = Math.max(8, Math.min(e.clientX, window.innerWidth - 250));
-		const y = Math.max(8, Math.min(e.clientY, window.innerHeight - 380));
-		ctx = { ids, single: ids.length === 1 ? (store.byId(ids[0]) ?? null) : null, x, y };
+		resizeStartX = e.clientX;
+		resizeStartWidth = prefs.nameWidth;
+		resizing = true;
+		document.body.classList.add('col-resizing');
+	}
+
+	function onResizePointerMove(e: PointerEvent) {
+		if (!resizing) return;
+		prefs.nameWidth = clampNameWidth(resizeStartWidth + e.clientX - resizeStartX);
+	}
+
+	function onResizePointerEnd(e: PointerEvent & { currentTarget: HTMLElement }) {
+		if (!resizing) return;
+		resizing = false;
+		document.body.classList.remove('col-resizing');
+		if (e.currentTarget.hasPointerCapture(e.pointerId))
+			e.currentTarget.releasePointerCapture(e.pointerId);
+	}
+
+	/** keyboard fallback for the drag handle: ±16px, Shift = ±64px */
+	function onResizeKeydown(e: KeyboardEvent) {
+		const step = e.shiftKey ? 64 : 16;
+		if (e.key === 'ArrowLeft') prefs.nameWidth = clampNameWidth(prefs.nameWidth - step);
+		else if (e.key === 'ArrowRight') prefs.nameWidth = clampNameWidth(prefs.nameWidth + step);
+		else if (e.key === 'Home') prefs.nameWidth = NAME_WIDTH_MIN;
+		else if (e.key === 'End') prefs.nameWidth = NAME_WIDTH_MAX;
+		else return;
+		e.preventDefault();
+	}
+
+	// ---------- columns menu ----------
+
+	let colsOpen = $state(false);
+	let colsBtnEl: HTMLElement | undefined = $state();
+	let colsMenuEl: HTMLElement | undefined = $state();
+	let colsPos = $state({ x: 0, y: 0 });
+
+	// the menu takes focus when it opens, whichever way it was opened
+	$effect(() => {
+		if (colsOpen && colsMenuEl) {
+			void tick().then(() =>
+				colsMenuEl?.querySelector<HTMLElement>('button.cols-item:not([disabled])')?.focus()
+			);
+		}
+	});
+
+	function toggleColsMenu() {
+		if (colsOpen) {
+			closeCols();
+			return;
+		}
+		const r = colsBtnEl?.getBoundingClientRect();
+		colsPos = {
+			x: Math.max(8, Math.min(r?.left ?? 8, window.innerWidth - 250)),
+			y: Math.max(8, Math.min((r?.bottom ?? 0) + 6, window.innerHeight - 320))
+		};
+		colsOpen = true;
+	}
+
+	function closeCols() {
+		// hand focus back only when a keyboard user was inside the menu
+		if (colsBtnEl && colsMenuEl?.contains(document.activeElement)) colsBtnEl.focus();
+		colsOpen = false;
+	}
+
+	function toggleColumn(key: ColumnKey) {
+		prefs.hidden = prefs.hidden.includes(key)
+			? prefs.hidden.filter((k) => k !== key)
+			: [...prefs.hidden, key];
+	}
+
+	function showAllColumns() {
+		prefs.hidden = [];
+	}
+
+	function closePopups() {
+		closeCtx();
+		if (colsOpen) closeCols();
+	}
+
+	/** Arrow/Home/End roving inside an open popup menu */
+	function roveMenuItems(menu: HTMLElement | undefined, selector: string, e: KeyboardEvent) {
+		if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End')
+			return;
+		const items = menu ? [...menu.querySelectorAll<HTMLElement>(selector)] : [];
+		if (items.length === 0) return;
+		e.preventDefault();
+		const active = items.indexOf(document.activeElement as HTMLElement);
+		let next: number;
+		if (e.key === 'Home') next = 0;
+		else if (e.key === 'End') next = items.length - 1;
+		else if (active === -1) next = e.key === 'ArrowDown' ? 0 : items.length - 1;
+		else next = (active + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+		items[next].focus();
 	}
 
 	function onWindowKeydown(e: KeyboardEvent) {
+		// roving focus inside the open menu
+		if (ctx) {
+			if (e.key === 'Escape') {
+				e.preventDefault();
+				closeCtx();
+				return;
+			}
+			if (e.key === 'Tab') {
+				closeCtx(); // the menu is a detour, not a tab trap
+				return;
+			}
+			roveMenuItems(ctxMenuEl, 'button.ctx-item', e);
+			return;
+		}
+		if (colsOpen) {
+			if (e.key === 'Escape') {
+				e.preventDefault();
+				closeCols();
+				return;
+			}
+			if (e.key === 'Tab') {
+				closeCols(); // the menu is a detour, not a tab trap
+				return;
+			}
+			roveMenuItems(colsMenuEl, 'button.cols-item:not([disabled])', e);
+			return;
+		}
+		// keyboard selection lives on the torrent-name links (one tab stop per row)
+		if (e.target instanceof Element && e.target.matches('a.t-name')) {
+			const id = rowIdFrom(e);
+			if (id !== null) {
+				if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+					e.preventDefault();
+					moveRowFocus(id, e.key === 'ArrowDown' ? 1 : -1, e.shiftKey);
+					return;
+				}
+				if (e.key === ' ') {
+					e.preventDefault(); // without this the page scrolls
+					selectAs(id, { meta: true, shift: e.shiftKey });
+					return;
+				}
+				if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+					e.preventDefault();
+					const link = e.target as HTMLElement;
+					const r = link.getBoundingClientRect();
+					openCtx(id, r.left, r.bottom + 4, link);
+					return;
+				}
+			}
+		}
 		if (e.key === 'Escape') {
-			if (ctx) ctx = null;
-			else clearSelection();
+			clearSelection();
 			return;
 		}
 		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
@@ -305,33 +572,51 @@
 
 <svelte:window
 	onclick={onWindowClick}
+	ondblclick={onWindowDblclick}
 	oncontextmenu={onWindowContext}
 	onkeydown={onWindowKeydown}
-	onscroll={() => (ctx = null)}
-	onresize={() => (ctx = null)}
+	onscroll={closePopups}
+	onresize={closePopups}
 />
 
 <section class="page">
 	<div class="toolbar">
 		<div class="chips">
 			{#each FILTERS as f (f.key)}
-				<button class="chip {filter === f.key ? 'active' : ''}" onclick={() => (filter = f.key)}>
+				<button
+					class="chip {filter === f.key ? 'active' : ''}"
+					aria-pressed={filter === f.key}
+					onclick={() => {
+						// Finder folder-change semantics: switching views drops
+						// the selection instead of keeping rows you can't see
+						if (filter !== f.key) {
+							filter = f.key;
+							clearSelection();
+						}
+					}}
+				>
 					{f.label} <span class="chip-count">{counts[f.key]}</span>
 				</button>
 			{/each}
 		</div>
 		<div class="toolbar-right">
-			<input class="search" type="search" placeholder="Search torrents…" bind:value={query} />
-			<select bind:value={sortKey} aria-label="Sort by">
-				<option value="activity">Recent activity</option>
-				<option value="name">Name</option>
-				<option value="progress">Progress</option>
-				<option value="size">Size</option>
-				<option value="ratio">Ratio</option>
-				<option value="seed">Seed time</option>
-			</select>
-			<button class="icon-btn" title="Toggle sort direction" onclick={() => (sortDir = -sortDir)}>
-				{sortDir === -1 ? '↓' : '↑'}
+			<input
+				class="search"
+				type="search"
+				placeholder="Search torrents…"
+				aria-label="Search torrents"
+				bind:value={query}
+			/>
+			<button
+				class="icon-btn cols-btn"
+				title="Choose columns"
+				aria-label="Choose columns"
+				aria-haspopup="menu"
+				aria-expanded={colsOpen}
+				bind:this={colsBtnEl}
+				onclick={toggleColsMenu}
+			>
+				▦
 			</button>
 			<button class="btn primary" onclick={() => (addOpen = true)}>+ Add</button>
 		</div>
@@ -346,6 +631,10 @@
 				that <code>rpc-bind-address</code> allows connections from <code>host.docker.internal</code>.
 				See the README for the one-time Transmission settings.
 			</p>
+			<div class="empty-actions">
+				<button class="btn sm" onclick={() => void store.refresh()}>Retry now</button>
+			</div>
+			<p class="hint">The list also retries on its own every 2 seconds.</p>
 		</div>
 	{:else if filtered.length === 0}
 		<div class="empty-state">
@@ -355,21 +644,87 @@
 					? 'Add a magnet link or .torrent URL to get started.'
 					: 'Try a different filter or search.'}
 			</p>
+			{#if store.torrents.length > 0}
+				<div class="empty-actions">
+					{#if query.trim()}
+						<button class="btn sm" onclick={() => (query = '')}>Clear search</button>
+					{/if}
+					{#if filter !== 'all'}
+						<button class="btn sm" onclick={() => (filter = 'all')}>Show all</button>
+					{/if}
+				</div>
+			{/if}
 		</div>
 	{:else}
-		<div class="table-wrap">
-			<table class="torrent-table">
+		<div class="table-wrap tall">
+			<table
+				class="torrent-table"
+				role="grid"
+				aria-label="Torrents"
+				style="min-width: {tableMinWidth(prefs)}px"
+			>
+				<colgroup>
+					<col style="width: {prefs.nameWidth}px" />
+					{#each dataCols as col (col.key)}
+						<col style="width: {col.width}px" />
+					{/each}
+					<col style="width: {ACTIONS_WIDTH}px" />
+				</colgroup>
 				<thead>
 					<tr>
-						<th class="col-name">Name</th>
-						<th>Status</th>
-						<th class="col-progress">Progress</th>
-						<th class="num">Size</th>
-						<th class="num">↓</th>
-						<th class="num">↑</th>
-						<th class="num">Ratio</th>
-						<th class="num">Seeded</th>
-						<th class="col-actions"></th>
+						<th class="col-name" scope="col" aria-sort={ariaSortOf(NAME_COL)}>
+							<button class="th-sort" onclick={() => sortBy(NAME_COL)} title="Sort by name">
+								<span class="th-label">Name</span>
+								<span class="th-arrow" class:on={sortKey === 'name'} aria-hidden="true">
+									{sortDir === 1 ? '↑' : '↓'}
+								</span>
+							</button>
+							<!-- a focusable, adjustable separator is the ARIA-correct resize
+							     widget; the checker just doesn't model it -->
+							<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+							<span
+								class="col-resize"
+								class:active={resizing}
+								role="separator"
+								aria-orientation="vertical"
+								aria-label="Resize Name column"
+								aria-valuemin={NAME_WIDTH_MIN}
+								aria-valuemax={NAME_WIDTH_MAX}
+								aria-valuenow={prefs.nameWidth}
+								title="Drag to resize · double-click to reset"
+								tabindex="0"
+								onpointerdown={onResizePointerDown}
+								onpointermove={onResizePointerMove}
+								onpointerup={onResizePointerEnd}
+								onpointercancel={onResizePointerEnd}
+								onkeydown={onResizeKeydown}
+								ondblclick={() => (prefs.nameWidth = DEFAULT_NAME_WIDTH)}
+							></span>
+						</th>
+						{#each dataCols as col (col.key)}
+							<th
+								scope="col"
+								class={col.headerClass ?? undefined}
+								aria-label={col.menuLabel}
+								aria-sort={ariaSortOf(col)}
+							>
+								{#if col.sortKey}
+									<button
+										class="th-sort"
+										onclick={() => sortBy(col)}
+										title="Sort by {col.menuLabel}"
+									>
+										<span class="th-label">{col.label}</span>
+										<span class="th-arrow" class:on={sortKey === col.sortKey} aria-hidden="true">
+											{sortDir === 1 ? '↑' : '↓'}
+										</span>
+									</button>
+								{:else}
+									{col.label}
+								{/if}
+							</th>
+						{/each}
+						<th class="col-actions" scope="col"></th>
 					</tr>
 				</thead>
 				<tbody>
@@ -378,41 +733,57 @@
 							data-torrent-id={t.id}
 							class:selected={selection.has(t.id)}
 							class:hr={hrOf(t).inGroup}
-							class:ready={isArchiveReady(t, store.session)}
+							class:ready={readyOf(t)}
+							aria-selected={selection.has(t.id)}
 						>
 							<td class="col-name">
-								<a class="t-name" href="/torrent/{t.id}">{t.name}</a>
-								{#if hrOf(t).inGroup}
-									<span
-										class="hr-badge"
-										title="Hit &amp; Run — seeded {fmtDuration(hrOf(t).seeded)} of {fmtHours(hrOf(t).required)} ({fmtDuration(hrOf(t).remaining)} to go). {hrRuleHint()}"
-									>
-										HR {fmtHours(hrOf(t).seeded)}/{fmtHours(hrOf(t).required)}
-									</span>
-								{/if}
-								{#if isArchiveReady(t, store.session)}
-									<span class="ready-badge" title={archiveReadyHint()}>✓ ready</span>
-								{/if}
-							</td>
-							<td><StatusBadge torrent={t} /></td>
-							<td class="col-progress">
-								<div class="prog-cell">
-									<ProgressBar value={t.percentDone} />
-									<span class="prog-label">
-										{fmtPercent(t.percentDone)}
-										{#if t.percentDone < 1 && statusInfo(t).key === 'downloading'} · ETA {fmtEta(t.eta)}{/if}
-									</span>
+								<div class="name-cell">
+									<a class="t-name" href="/torrent/{t.id}" title={t.name}>{t.name}</a>
+									{#if hrOf(t).inGroup}
+										<span
+											class="hr-badge"
+											title="Hit &amp; Run — seeded {fmtDuration(hrOf(t).seeded)} of {fmtHours(hrOf(t).required)} ({fmtDuration(hrOf(t).remaining)} to go). {hrRuleHint()}"
+										>
+											HR {fmtHours(hrOf(t).seeded)}/{fmtHours(hrOf(t).required)}
+										</span>
+									{/if}
+									{#if readyOf(t)}
+										<span class="ready-badge" title={archiveReadyHint()}>✓ ready</span>
+									{/if}
 								</div>
 							</td>
-							<td class="num">{fmtBytes(t.sizeWhenDone)}</td>
-							<td class="num dim">{fmtSpeed(t.rateDownload)}</td>
-							<td class="num dim">{fmtSpeed(t.rateUpload)}</td>
-							<td class="num">{fmtRatio(t.uploadRatio)}</td>
-							<td class="num dim">{fmtDuration(t.secondsSeeding)}</td>
+							{#each dataCols as col (col.key)}
+								{#if col.key === 'status'}
+									<td><StatusBadge torrent={t} /></td>
+								{:else if col.key === 'progress'}
+									<td>
+										<div class="prog-cell">
+											<ProgressBar value={t.percentDone} />
+											<span class="prog-label">
+												{fmtPercent(t.percentDone)}
+												{#if t.percentDone < 1 && statusInfo(t).key === 'downloading'}
+													· ETA {fmtEta(t.eta)}
+												{/if}
+											</span>
+										</div>
+									</td>
+								{:else if col.key === 'size'}
+									<td class="num">{fmtBytes(t.sizeWhenDone)}</td>
+								{:else if col.key === 'rateDown'}
+									<td class="num dim">{fmtSpeed(t.rateDownload)}</td>
+								{:else if col.key === 'rateUp'}
+									<td class="num dim">{fmtSpeed(t.rateUpload)}</td>
+								{:else if col.key === 'ratio'}
+									<td class="num">{fmtRatio(t.uploadRatio)}</td>
+								{:else if col.key === 'seeded'}
+									<td class="num dim">{fmtDuration(t.secondsSeeding)}</td>
+								{/if}
+							{/each}
 							<td class="col-actions">
 								<button
 									class="icon-btn"
 									title={statusInfo(t).key === 'paused' ? 'Resume' : 'Pause'}
+									aria-label={statusInfo(t).key === 'paused' ? 'Resume' : 'Pause'}
 									onclick={() => toggle(t)}
 								>
 									{statusInfo(t).key === 'paused' ? '▶' : '❚❚'}
@@ -420,6 +791,7 @@
 								<button
 									class="icon-btn danger-act"
 									title="Remove torrent…"
+									aria-label="Remove torrent…"
 									onclick={() => {
 										removeTarget = t;
 										removeDeleteData = false;
@@ -477,20 +849,22 @@
 
 {#if selection.size > 0}
 	<div class="sel-bar" role="toolbar" aria-label="Actions for selected torrents">
-		<span class="sel-count">{selection.size} selected · {fmtBytes(selectedTotal)}</span>
+		<span class="sel-count" aria-live="polite">
+			{selection.size} selected · {fmtBytes(selectedTotal)}
+		</span>
 		<div class="sel-actions">
 			<button class="btn sm" onclick={() => void store.actMany([...selection], { action: 'start' })}>
-				▶ Resume
+				<span aria-hidden="true">▶</span> Resume
 			</button>
 			<button class="btn sm" onclick={() => void store.actMany([...selection], { action: 'stop' })}>
-				❚❚ Pause
+				<span aria-hidden="true">❚❚</span> Pause
 			</button>
 			<button class="btn sm" onclick={() => void store.actMany([...selection], { action: 'verify' })}>
 				Verify
 			</button>
 			{#if selHr.inGroup > 0}
 				<button class="btn sm" onclick={() => void store.setHr([...selection], 'exclude')}>
-					Remove from HR{selHr.inGroup > 1 ? ` (${selHr.inGroup})` : ''}
+					Exclude from HR{selHr.inGroup > 1 ? ` (${selHr.inGroup})` : ''}
 				</button>
 			{/if}
 			{#if selHr.excluded > 0}
@@ -499,14 +873,17 @@
 				</button>
 			{/if}
 			<button class="btn sm" onclick={() => openBulkMove([...selection])}>Move to HDD…</button>
+			<span class="sel-sep" aria-hidden="true"></span>
 			<button class="btn sm danger" onclick={() => openBulkRemove([...selection])}>Remove…</button>
 		</div>
-		<button class="icon-btn" title="Clear selection (Esc)" onclick={() => clearSelection()}>✕</button>
+		<button class="icon-btn" title="Clear selection (Esc)" aria-label="Clear selection" onclick={() => clearSelection()}>
+			✕
+		</button>
 	</div>
 {/if}
 
 {#if ctx}
-	<div class="ctx-menu" role="menu" style="left: {ctx.x}px; top: {ctx.y}px">
+	<div class="ctx-menu" role="menu" bind:this={ctxMenuEl} style="left: {ctx.x}px; top: {ctx.y}px">
 		{#if ctxSingle}
 			<button class="ctx-item" role="menuitem" onclick={() => void openDetail(ctxSingle!.id)}>
 				Open details
@@ -522,7 +899,7 @@
 		<div class="ctx-sep" role="separator"></div>
 		{#if ctxHr.inGroup > 0}
 			<button class="ctx-item" role="menuitem" onclick={() => bulkHr(ctxIds, 'exclude')}>
-				Remove from HR{ctxHr.inGroup > 1 ? ` (${ctxHr.inGroup})` : ''}
+				Exclude from HR{ctxHr.inGroup > 1 ? ` (${ctxHr.inGroup})` : ''}
 			</button>
 		{/if}
 		{#if ctxHr.excluded > 0}
@@ -535,6 +912,41 @@
 		<button class="ctx-item danger" role="menuitem" onclick={() => openBulkRemove(ctxIds)}>
 			Remove…
 		</button>
+	</div>
+{/if}
+
+{#if colsOpen}
+	<div
+		class="ctx-menu columns-menu"
+		role="menu"
+		aria-label="Table columns"
+		bind:this={colsMenuEl}
+		style="left: {colsPos.x}px; top: {colsPos.y}px"
+	>
+		<div class="cols-title">Columns</div>
+		<button class="ctx-item cols-item" role="menuitemcheckbox" aria-checked="true" disabled>
+			<span class="cols-check" aria-hidden="true">✓</span>
+			Name <span class="cols-hint">always shown</span>
+		</button>
+		{#each COLUMNS.filter((c) => c.hideable) as col (col.key)}
+			<button
+				class="ctx-item cols-item"
+				role="menuitemcheckbox"
+				aria-checked={!prefs.hidden.includes(col.key)}
+				onclick={() => toggleColumn(col.key)}
+			>
+				<span class="cols-check" aria-hidden="true">
+					{prefs.hidden.includes(col.key) ? '' : '✓'}
+				</span>
+				{col.menuLabel}
+			</button>
+		{/each}
+		{#if prefs.hidden.length > 0}
+			<div class="ctx-sep" role="separator"></div>
+			<button class="ctx-item cols-item" role="menuitem" onclick={showAllColumns}>
+				Show all
+			</button>
+		{/if}
 	</div>
 {/if}
 

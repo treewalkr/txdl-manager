@@ -1,5 +1,5 @@
-import type { SessionInfo, Torrent } from './types';
-import { hrInfo } from './hr';
+import type { Torrent } from './types';
+import { hrInfo, hrRuleHint } from './hr';
 
 // Transmission status enum
 export const TR_STATUS = {
@@ -65,17 +65,13 @@ export function matchesFilter(
 	}
 }
 
-// "Archive-ready": done downloading and either the seed ratio or the seed time
-// goal has been met — i.e. this torrent is a candidate for move-to-HDD + remove.
-export const ARCHIVE_READY_RATIO = 2;
-export const ARCHIVE_READY_SEED_SECONDS = 72 * 3600;
-
-export function isArchiveReady(t: Torrent, _session: SessionInfo | null): boolean {
-	if (t.percentDone < 1) return false;
-	const ratio = t.uploadRatio >= 0 ? t.uploadRatio : 0;
-	return ratio >= ARCHIVE_READY_RATIO || t.secondsSeeding >= ARCHIVE_READY_SEED_SECONDS;
+// "Archive-ready": download complete and the HR seed obligation is satisfied —
+// seeded long enough for the size tier, or manually excluded — i.e. a candidate
+// for clean → move-to-HDD → remove. HR graduation is the readiness signal.
+export function isArchiveReady(t: Torrent, hrExcluded: boolean): boolean {
+	return t.percentDone >= 1 && !hrInfo(t, hrExcluded).inGroup;
 }
 
 export function archiveReadyHint(): string {
-	return `Complete and (ratio ≥ ${ARCHIVE_READY_RATIO} or seeded ≥ ${ARCHIVE_READY_SEED_SECONDS / 86400} days) — ready to move to HDD and remove.`;
+	return `Complete and HR seed requirement met (or manually excluded) — ready to clean, move to HDD, and remove. ${hrRuleHint()}`;
 }

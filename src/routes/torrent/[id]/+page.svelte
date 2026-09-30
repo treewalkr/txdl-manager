@@ -133,8 +133,11 @@
 				</div>
 			</div>
 			<div class="detail-actions">
-				<button class="btn" onclick={() => store.act(id, { action: statusInfo(torrent).key === 'paused' ? 'start' : 'stop' })}>
-					{statusInfo(torrent).key === 'paused' ? '▶ Resume' : '❚❚ Pause'}
+				<button
+					class="btn"
+					onclick={() => store.act(id, { action: statusInfo(torrent).key === 'paused' ? 'start' : 'stop' })}
+				>
+					{#if statusInfo(torrent).key === 'paused'}<span aria-hidden="true">▶</span> Resume{:else}<span aria-hidden="true">❚❚</span> Pause{/if}
 				</button>
 				<button class="btn" onclick={() => store.act(id, { action: 'verify' })}>Verify</button>
 				<button class="btn" onclick={openMove}>Move to HDD…</button>
@@ -185,10 +188,10 @@
 			</div>
 		</div>
 
-		{#if hr}
-			<div class="card hr-card">
-				<div class="card-head">
-					<h3>Hit &amp; Run</h3>
+			{#if hr}
+				<div class="card">
+					<div class="card-head">
+						<h3>Hit &amp; Run</h3>
 					<div class="card-actions">
 						{#if hr.inGroup}
 							<button class="btn" onclick={() => store.setHr([id], 'exclude')}>
@@ -228,7 +231,7 @@
 			</div>
 		{/if}
 
-		<div class="card junk-card">
+		<div class="card">
 			<div class="card-head">
 				<h3>Junk cleanup</h3>
 				<div class="card-actions">
@@ -280,7 +283,7 @@
 			{/if}
 		</div>
 
-		<div class="card files-card">
+		<div class="card">
 			<div class="card-head">
 				<h3>Files</h3>
 				<span class="dim hint">Uncheck a file to stop downloading it and mark it as junk.</span>
@@ -292,10 +295,10 @@
 					<table class="files-table">
 						<thead>
 							<tr>
-								<th class="col-want"></th>
-								<th>Path</th>
-								<th class="num">Size</th>
-								<th class="num">Progress</th>
+								<th class="col-want" scope="col"></th>
+								<th scope="col">Path</th>
+								<th class="num" scope="col">Size</th>
+								<th class="num" scope="col">Progress</th>
 							</tr>
 						</thead>
 						<tbody>

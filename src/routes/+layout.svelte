@@ -41,5 +41,7 @@
 </div>
 
 {#if store.flash}
-	<div class="toast {store.flash.tone}" role="status">{store.flash.message}</div>
+	<div class="toast {store.flash.tone}" role={store.flash.tone === 'error' ? 'alert' : 'status'}>
+		{store.flash.message}
+	</div>
 {/if}
