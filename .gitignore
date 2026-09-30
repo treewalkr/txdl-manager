@@ -30,3 +30,4 @@ vite.config.ts.timestamp-*
 .impeccable/
 .playwright-cli/
 .zcode/plans/
+.vscode/
