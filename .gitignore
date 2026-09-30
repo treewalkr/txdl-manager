@@ -25,3 +25,8 @@ vite.config.ts.timestamp-*
 # txdl
 .docker-stub
 .data
+
+# Tool state
+.impeccable/
+.playwright-cli/
+.zcode/plans/
