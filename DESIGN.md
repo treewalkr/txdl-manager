@@ -153,7 +153,7 @@ Detail page: head block (title, status word, path), then a 1px-ruled stat grid (
 
 ## Shapes
 
-Rectangles only: every corner is 0px. Controls are bordered rectangles; the connection lamp is a 7px square; gauges are 10-cell block-character strings (`█████░░░░░`, cyan, green when done); filter tokens wrap their label in `[ ` ` ]` bracket characters; the selection command line prefixes its count with `> `. Edge markers (HR amber, ready green) are 1px inset rules on the row's first cell.
+Rectangles only: every corner is 0px. Controls are bordered rectangles; the connection lamp is a 7px square; gauges are 10-cell block-character strings (`█████░░░░░`, cyan, green when done); filter tokens wrap their label in `[ ` ` ]` bracket characters; the selection command line prefixes its count with `> `. Edge markers (HR amber, ready green) are 1px inset rules on the row's first cell. Location group headers toggle with `▸`/`▾` text carets (collapsed/expanded), path left, `count · size` right in 11.5px dim, collapsing as an instant repaint.
 
 ## Components
 

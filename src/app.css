@@ -346,6 +346,11 @@ button {
 	border-color: color-mix(in srgb, var(--red) 55%, transparent);
 }
 
+/* the view menu's lamp: grouping is on, the table is sectioned */
+.cols-btn.on {
+	color: var(--accent);
+}
+
 input[type='text'],
 input[type='search'],
 select {
@@ -501,6 +506,9 @@ tbody tr.selected .ready-badge {
 
 /* the list table's widths are enforced by its <colgroup> */
 .torrent-table {
+	/* pinned header row height (10.5px/1.5 label + 2×8px padding + 1px
+	   rule); sticky group headers dock directly below it */
+	--thead-h: 33px;
 	table-layout: fixed;
 	/* sticky cells lose collapsed borders while scrolling */
 	border-collapse: separate;
@@ -515,6 +523,63 @@ tbody tr.selected .ready-badge {
 	top: 0;
 	background: var(--panel);
 	z-index: 2;
+}
+
+/* location groups: full-width section rows riding directly under the
+   pinned header; the raised panel and stronger hairlines carry the
+   structure — collapse/expand is an instant repaint, no height motion */
+.group-row td {
+	padding: 0;
+	background: var(--panel-2);
+	border-top: 1px solid var(--border);
+	border-bottom: 1px solid var(--border);
+	position: sticky;
+	top: var(--thead-h);
+	z-index: 1;
+}
+
+.group-toggle {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	padding: 6px 12px;
+	background: transparent;
+	border: none;
+	color: var(--text);
+	font: inherit;
+	font-weight: 600;
+	text-align: left;
+	cursor: pointer;
+}
+
+.group-toggle:hover {
+	background: var(--panel-hover);
+}
+
+.group-caret {
+	flex: none;
+	color: var(--dim);
+	font-weight: 400;
+}
+
+.group-toggle:hover .group-caret {
+	color: var(--accent);
+}
+
+.group-path {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.group-meta {
+	flex: none;
+	color: var(--dim);
+	font-weight: 400;
+	font-size: 11.5px;
 }
 
 /* sortable headers: the button covers the whole cell, th look intact */

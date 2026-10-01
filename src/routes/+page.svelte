@@ -27,6 +27,15 @@
 		type ColumnPrefs
 	} from '$lib/columns';
 	import {
+		DEFAULT_GROUPING,
+		GROUPING_STORAGE_KEY,
+		groupTorrents,
+		parseGroupingPrefs,
+		serializeGroupingPrefs,
+		type GroupingPrefs,
+		type TorrentGroup
+	} from '$lib/grouping';
+	import {
 		archiveReadyHint,
 		isArchiveReady,
 		matchesFilter,
@@ -49,6 +58,22 @@
 
 	$effect(() => {
 		if (browser) localStorage.setItem(PREFS_STORAGE_KEY, serializePrefs(prefs));
+	});
+
+	// grouping is a view mode like columns: same client-only localStorage deal
+	const initialGrouping = browser
+		? parseGroupingPrefs(localStorage.getItem(GROUPING_STORAGE_KEY))
+		: DEFAULT_GROUPING;
+	let grouping = $state<GroupingPrefs>(initialGrouping);
+	// collapse state lives in the set; `grouping` keeps only the mode
+	const collapsedDirs = new SvelteSet<string>(initialGrouping.collapsed);
+
+	$effect(() => {
+		if (browser)
+			localStorage.setItem(
+				GROUPING_STORAGE_KEY,
+				serializeGroupingPrefs({ groupBy: grouping.groupBy, collapsed: [...collapsedDirs] })
+			);
 	});
 
 	const dataCols = $derived(visibleDataColumns(prefs));
@@ -147,7 +172,36 @@
 		complete: store.torrents.filter((t) => matchesFilter(t, 'complete')).length
 	});
 
-	const filteredIds = $derived(filtered.map((t) => t.id));
+	/** Per-location row counts under the filter but without the search
+	 *  query, so a narrowed group header can read `matches/total`. */
+	const dirTotals = $derived.by(() => {
+		const m = new Map<string, number>();
+		for (const t of store.torrents) {
+			if (!matchesFilter(t, filter, store.hrExcluded)) continue;
+			m.set(t.downloadDir, (m.get(t.downloadDir) ?? 0) + 1);
+		}
+		return m;
+	});
+
+	const groups = $derived(grouping.groupBy === 'location' ? groupTorrents(filtered) : null);
+
+	type RenderItem = { kind: 'group'; group: TorrentGroup } | { kind: 'row'; torrent: Torrent };
+
+	/** The flat order actually on screen: section headers with their expanded
+	 *  rows, collapsed sections skipped. Selection, arrows and ⌘A operate on
+	 *  exactly what is visible — Finder list-view semantics. */
+	const renderItems = $derived.by(() => {
+		if (!groups) return filtered.map((torrent): RenderItem => ({ kind: 'row', torrent }));
+		const items: RenderItem[] = [];
+		for (const g of groups) {
+			items.push({ kind: 'group', group: g });
+			if (!collapsedDirs.has(g.key))
+				for (const torrent of g.rows) items.push({ kind: 'row', torrent });
+		}
+		return items;
+	});
+
+	const filteredIds = $derived(renderItems.flatMap((i) => (i.kind === 'row' ? [i.torrent.id] : [])));
 	const selectedTotal = $derived(
 		store.torrents.reduce((s, t) => s + (selection.has(t.id) ? t.sizeWhenDone : 0), 0)
 	);
@@ -391,7 +445,7 @@
 		const r = colsBtnEl?.getBoundingClientRect();
 		colsPos = {
 			x: Math.max(8, Math.min(r?.left ?? 8, window.innerWidth - 250)),
-			y: Math.max(8, Math.min((r?.bottom ?? 0) + 6, window.innerHeight - 320))
+			y: Math.max(8, Math.min((r?.bottom ?? 0) + 6, window.innerHeight - 400))
 		};
 		colsOpen = true;
 	}
@@ -410,6 +464,11 @@
 
 	function showAllColumns() {
 		prefs.hidden = [];
+	}
+
+	function toggleGroup(key: string) {
+		if (collapsedDirs.has(key)) collapsedDirs.delete(key);
+		else collapsedDirs.add(key);
 	}
 
 	function closePopups() {
@@ -609,6 +668,7 @@
 			/>
 			<button
 				class="icon-btn cols-btn"
+				class:on={grouping.groupBy !== 'none'}
 				title="Choose columns"
 				aria-label="Choose columns"
 				aria-haspopup="menu"
@@ -728,7 +788,7 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each filtered as t (t.id)}
+					{#snippet row(t: Torrent)}
 						<tr
 							data-torrent-id={t.id}
 							class:selected={selection.has(t.id)}
@@ -801,6 +861,34 @@
 								</button>
 							</td>
 						</tr>
+					{/snippet}
+					{#each renderItems as item (item.kind === 'group' ? `g:${item.group.key}` : item.torrent.id)}
+						{#if item.kind === 'group'}
+							{@const g = item.group}
+							{@const matched = g.rows.length}
+							{@const total = dirTotals.get(g.key) ?? matched}
+							<tr class="group-row">
+								<td colspan={dataCols.length + 2}>
+									<button
+										class="group-toggle"
+										aria-expanded={!collapsedDirs.has(g.key)}
+										title={g.key}
+										onclick={() => toggleGroup(g.key)}
+									>
+										<span class="group-caret" aria-hidden="true">
+											{collapsedDirs.has(g.key) ? '▸' : '▾'}
+										</span>
+										<span class="group-path">{g.key}</span>
+										<span class="group-meta">
+											{total > matched ? `${matched}/${total}` : matched}
+											· {fmtBytes(g.rows.reduce((s, t) => s + t.sizeWhenDone, 0))}
+										</span>
+									</button>
+								</td>
+							</tr>
+						{:else}
+							{@render row(item.torrent)}
+						{/if}
 					{/each}
 				</tbody>
 			</table>
@@ -947,6 +1035,26 @@
 				Show all
 			</button>
 		{/if}
+		<div class="ctx-sep" role="separator"></div>
+		<div class="cols-title">Group by</div>
+		<button
+			class="ctx-item cols-item"
+			role="menuitemradio"
+			aria-checked={grouping.groupBy === 'none'}
+			onclick={() => (grouping = { ...grouping, groupBy: 'none' })}
+		>
+			<span class="cols-check" aria-hidden="true">{grouping.groupBy === 'none' ? '✓' : ''}</span>
+			None
+		</button>
+		<button
+			class="ctx-item cols-item"
+			role="menuitemradio"
+			aria-checked={grouping.groupBy === 'location'}
+			onclick={() => (grouping = { ...grouping, groupBy: 'location' })}
+		>
+			<span class="cols-check" aria-hidden="true">{grouping.groupBy === 'location' ? '✓' : ''}</span>
+			Location
+		</button>
 	</div>
 {/if}
 
