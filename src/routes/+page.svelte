@@ -8,6 +8,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { fmtBytes, fmtDuration, fmtEta, fmtHours, fmtPercent, fmtRatio, fmtSpeed } from '$lib/format';
 	import { hrInfo, hrRuleHint } from '$lib/hr';
+	import { isVideoFile } from '$lib/media';
 	import { applySelection } from '$lib/selection';
 	import {
 		ACTIONS_WIDTH,
@@ -44,6 +45,32 @@
 	} from '$lib/status';
 	import { store } from '$lib/stores/torrents.svelte';
 	import type { Torrent } from '$lib/types';
+
+	// Row-level "watch this": the 2s list poll has no file data, so lazily fetch
+	// the detail once and play its largest fully-downloaded video file.
+	async function quickPlay(t: Torrent) {
+		try {
+			const res = await fetch(`/api/torrents/${t.id}`);
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			const { torrent } = (await res.json()) as { torrent: Torrent };
+			const files = torrent.files ?? [];
+			const stats = torrent.fileStats ?? [];
+			let best = -1;
+			for (let i = 0; i < files.length; i++) {
+				if (!isVideoFile(files[i].name)) continue;
+				const done = stats[i]?.bytesCompleted ?? files[i].bytesCompleted;
+				if (done < files[i].length) continue;
+				if (best < 0 || files[i].length > files[best].length) best = i;
+			}
+			if (best < 0) {
+				store.setFlash(`No completed video file in "${t.name}"`);
+				return;
+			}
+			await goto(`/torrent/${t.id}/play?file=${best}`);
+		} catch {
+			store.setFlash('Could not load the file list for playback.');
+		}
+	}
 
 	let filter = $state<FilterKey>('all');
 	let query = $state('');
@@ -840,6 +867,14 @@
 								{/if}
 							{/each}
 							<td class="col-actions">
+								<button
+									class="icon-btn"
+									title="Play video in browser"
+									aria-label="Play video in browser"
+									onclick={() => void quickPlay(t)}
+								>
+									▷
+								</button>
 								<button
 									class="icon-btn"
 									title={statusInfo(t).key === 'paused' ? 'Resume' : 'Pause'}

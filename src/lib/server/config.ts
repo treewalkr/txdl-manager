@@ -11,6 +11,9 @@ export interface AppConfig {
 	moveDestination: string;
 	/** JSON file storing app-local state (HR group overrides). */
 	hrStateFile: string;
+	/** ffmpeg/ffprobe binaries for in-browser video playback (remux/transcode). */
+	ffmpegPath: string;
+	ffprobePath: string;
 	rpcUsername?: string;
 	rpcPassword?: string;
 }
@@ -26,6 +29,8 @@ export function env(): AppConfig {
 		hostDownloadDir: process.env.HOST_DOWNLOAD_DIR ?? '',
 		moveDestination: process.env.MOVE_DESTINATION ?? '',
 		hrStateFile: hrStateRaw.startsWith('/') ? hrStateRaw : resolve(hrStateRaw),
+		ffmpegPath: process.env.FFMPEG_PATH ?? 'ffmpeg',
+		ffprobePath: process.env.FFPROBE_PATH ?? 'ffprobe',
 		rpcUsername: process.env.TRANSMISSION_RPC_USERNAME || undefined,
 		rpcPassword: process.env.TRANSMISSION_RPC_PASSWORD || undefined
 	};

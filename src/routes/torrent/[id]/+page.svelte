@@ -5,6 +5,7 @@
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { fmtBytes, fmtDate, fmtDuration, fmtEta, fmtHours, fmtPercent, fmtRatio, fmtSpeed } from '$lib/format';
 	import { hrInfo, hrRuleHint } from '$lib/hr';
+	import { isVideoFile } from '$lib/media';
 	import { statusInfo } from '$lib/status';
 	import { store } from '$lib/stores/torrents.svelte';
 	import type { CleanupDeleteResult, CleanupScanResult } from '$lib/types';
@@ -109,7 +110,17 @@
 			const multi = files.length > 1 && files.some((x) => x.name.includes('/'));
 			const display = multi ? f.name.split('/').slice(1).join('/') || f.name : f.name;
 			const depth = display.split('/').length - 1;
-			return { f, i, display, depth, wanted: stats[i]?.wanted ?? true, completed: stats[i]?.bytesCompleted ?? f.bytesCompleted };
+			const completed = stats[i]?.bytesCompleted ?? f.bytesCompleted;
+			return {
+				f,
+				i,
+				display,
+				depth,
+				wanted: stats[i]?.wanted ?? true,
+				completed,
+				video: isVideoFile(f.name),
+				complete: completed >= f.length
+			};
 		})
 	);
 </script>
@@ -313,6 +324,20 @@
 										/>
 									</td>
 									<td>
+										{#if row.video}
+											{#if row.complete}
+												<a
+													class="file-play"
+													href={`/torrent/${id}/play?file=${row.i}`}
+													title="Play in browser"
+													aria-label="Play {row.display}"
+												>
+													▶
+												</a>
+											{:else}
+												<span class="file-play" title="Needs the full file before playback">▶</span>
+											{/if}
+										{/if}
 										<span class="file-path" style="padding-left: {row.depth * 16}px">{row.display || row.f.name}</span>
 									</td>
 									<td class="num">{fmtBytes(row.f.length)}</td>

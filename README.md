@@ -14,6 +14,7 @@ SvelteKit 2 / Svelte 5 (runes) frontend over the Transmission RPC API, packaged 
 - Archive-ready badge for torrents that are complete and seeded enough (ratio ≥ 2 or ≥ 72 h).
 - Per-torrent detail page with wanted/unwanted file checkboxes.
 - Junk cleanup of unselected files (incl. `.part` leftovers and empty dirs), guarded by a path-containment check.
+- In-browser video playback of completed files — MP4/WebM play directly; MKV/AVI/HEVC/etc. are remuxed or transcoded on the fly by ffmpeg (bundled in the Docker image; `brew install ffmpeg` for dev). Resumes where you left off.
 - Move to HDD, remove (optionally with data), add magnet/.torrent URL, start/pause/verify.
 
 ## One-time Transmission setup
@@ -66,6 +67,7 @@ The mock's download dir maps to `dev-fixtures/` on disk, so junk cleanup really 
 | `TRANSMISSION_RPC_USERNAME` / `_PASSWORD` | — | Only if RPC auth is enabled |
 | `HOST_DOWNLOAD_DIR` | *(unset)* | Transmission's download dir on the host, mounted RW at `/data` |
 | `MOVE_DESTINATION` | *(unset)* | HDD path preset for the Move dialog |
+| `FFMPEG_PATH` / `FFPROBE_PATH` | `ffmpeg` / `ffprobe` | Override the playback tool binaries |
 | `HR_STATE_FILE` | `/state/hr-state.json` in Docker, `.data/hr-state.json` in dev | "Removed from HR" overrides |
 
 The app has no authentication and binds to `127.0.0.1` only — don't expose it beyond localhost. The delete endpoint resolves real paths and refuses anything escaping `/data` (see `src/lib/server/paths.ts` and its tests).

@@ -12,6 +12,8 @@ RUN bun run build
 # for an always-on local container.
 FROM oven/bun:1-alpine AS run
 WORKDIR /app
+# ffmpeg/ffprobe: in-browser video playback (remux/transcode of non-native formats)
+RUN apk add --no-cache ffmpeg
 ENV NODE_ENV=production
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/build ./build
