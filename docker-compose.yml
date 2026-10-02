@@ -14,23 +14,26 @@ services:
       # Optional, if you enabled RPC authentication in Transmission:
       TRANSMISSION_RPC_USERNAME: ${TRANSMISSION_RPC_USERNAME:-}
       TRANSMISSION_RPC_PASSWORD: ${TRANSMISSION_RPC_PASSWORD:-}
-      # Container-side mount point of the download directory (keep as /data).
-      DATA_ROOT: /data
-      # The same directory as Transmission sees it on the host. Used to map
-      # torrent file paths onto /data for junk cleanup. Leave empty to disable.
-      HOST_DOWNLOAD_DIR: ${HOST_DOWNLOAD_DIR:-}
+      # Host roots (comma-separated) that cover Transmission's download
+      # directories. Each must also be bind-mounted at the SAME path below —
+      # then any download dir under them works, no path translation needed.
+      HOST_DOWNLOAD_ROOTS: ${HOST_DOWNLOAD_ROOTS:-}
       # Default destination preset in the "Move to HDD" dialog.
       MOVE_DESTINATION: ${MOVE_DESTINATION:-}
       # App-local state file (HR group overrides) — bind-mounted below.
       HR_STATE_FILE: /state/hr-state.json
+      # Download locations enabled for junk cleanup from the UI — bind-mounted below.
+      LOCATIONS_STATE_FILE: /state/locations.json
       ORIGIN: http://localhost:${APP_PORT:-3000}
     volumes:
-      # Read-write: the app deletes unselected junk files from here.
-      # Defaults to a throwaway dir so `docker compose up` works out of the box;
-      # set HOST_DOWNLOAD_DIR in .env to your real download directory.
-      - ${HOST_DOWNLOAD_DIR:-./.docker-stub}:/data
-      # App-local state (HR overrides). Same host dir dev mode writes to, so
-      # manual "Remove from HR" choices survive rebuilds and restarts.
+      # Same-path mounts, kept in sync with HOST_DOWNLOAD_ROOTS above: every
+      # root listed there needs a matching line here. Read-write: the app
+      # deletes unselected junk files under locations you enable in the UI,
+      # pinned inside each torrent's own download dir.
+      - /Users/ralim1:/Users/ralim1
+      - /Volumes:/Volumes
+      # App-local state (HR overrides, enabled locations). Same host dir dev
+      # mode writes to, so manual choices survive rebuilds and restarts.
       - ./.data:/state
     extra_hosts:
       # belt-and-braces for linux hosts; Docker Desktop provides this already

@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { extOf, isImageFile, isPlayableMedia, isVideoFile } from '$lib/media';
 import type { Torrent, TorrentFile } from '$lib/types';
 import { env } from './config';
-import { containerPathFor, resolveContained } from './paths';
+import { mapHostPath, mappingFor, resolveContained, UnmappedPathError } from './paths';
 
 const execFileP = promisify(execFile);
 
@@ -258,8 +258,13 @@ export async function resolveStreamFile(detail: Torrent, index: number): Promise
 			409
 		);
 	}
-	const mapped = containerPathFor(posix.join(detail.downloadDir, file.name));
-	const resolved = await resolveContained(env().dataRoot, mapped);
+	const hostPath = posix.join(detail.downloadDir, file.name);
+	const { mappings } = env();
+	const mapping = mappingFor(hostPath, mappings);
+	if (!mapping) {
+		throw new UnmappedPathError(`"${hostPath}" is outside the mapped download roots.`);
+	}
+	const resolved = await resolveContained(mapping.dataRoot, mapHostPath(hostPath, mappings));
 	if (!resolved) throw new StreamError(`"${file.name}" is not on disk (moved or deleted?)`, 410);
 	return { file, path: resolved };
 }

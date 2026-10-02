@@ -101,7 +101,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
 		if (e instanceof UnmappedPathError) {
 			return failed(
 				e.message,
-				'Set HOST_DOWNLOAD_DIR in .env to the path Transmission uses and mount it into the app (see docker-compose.yml). Files moved somewhere unmapped (e.g. the HDD) cannot be played.'
+				'Set HOST_DOWNLOAD_ROOTS in .env to roots covering the path Transmission uses and mount them into the app at the same paths (see docker-compose.yml). Files moved somewhere unmapped (e.g. the HDD) cannot be played.'
 			);
 		}
 		if (e instanceof PathEscapeError) return failed(e.message);

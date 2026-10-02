@@ -8,6 +8,8 @@ class TorrentStore {
 	config = $state<ClientConfig | null>(null);
 	/** Torrent ids manually removed from the HR group. */
 	hrExcluded = $state<number[]>([]);
+	/** Download locations enabled for junk cleanup (persisted server-side). */
+	locations = $state<string[]>([]);
 	detail = $state<Torrent | null>(null);
 	connected = $state(false);
 	error = $state<string | null>(null);
@@ -33,6 +35,7 @@ class TorrentStore {
 			this.session = body.session;
 			this.config = body.config;
 			this.hrExcluded = body.hr?.excluded ?? [];
+			this.locations = body.locations?.enabled ?? [];
 			this.connected = true;
 			this.error = null;
 			this.lastUpdated = Date.now();
@@ -178,6 +181,27 @@ class TorrentStore {
 			const json = await res.json().catch(() => null);
 			if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
 			if (Array.isArray(json?.excluded)) this.hrExcluded = json.excluded;
+			this.setFlash(json?.message ?? 'Done');
+			return true;
+		} catch (e) {
+			this.setFlash(e instanceof Error ? e.message : String(e), 'error');
+			return false;
+		}
+	};
+
+	/** Enable/disable a download location for junk cleanup (persisted server-side). */
+	setLocation = async (path: string, on: boolean): Promise<boolean> => {
+		try {
+			const res = on
+				? await fetch('/api/locations', {
+						method: 'POST',
+						headers: { 'content-type': 'application/json' },
+						body: JSON.stringify({ path })
+					})
+				: await fetch(`/api/locations?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+			const json = await res.json().catch(() => null);
+			if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
+			if (Array.isArray(json?.enabled)) this.locations = json.enabled;
 			this.setFlash(json?.message ?? 'Done');
 			return true;
 		} catch (e) {

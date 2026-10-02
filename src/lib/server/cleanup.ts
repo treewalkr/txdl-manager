@@ -1,8 +1,10 @@
 import { rmdir, stat, unlink } from 'node:fs/promises';
 import { posix } from 'node:path';
 import type { CleanupDeleteResult, CleanupScanResult, FileStat, Torrent, TorrentFile } from '$lib/types';
+import type { PathMapping } from './config';
 import { env } from './config';
-import { mapHostPath, resolveContained } from './paths';
+import { getLocations, locationEnabled } from './locations';
+import { mapHostPath, mappingFor, realpathSafe, resolveContained, UnmappedPathError } from './paths';
 
 const PART_SUFFIX = '.part';
 
@@ -40,18 +42,31 @@ async function diskUsage(path: string): Promise<number> {
 	}
 }
 
+/** Map one file path and report the mount root it landed under. */
+function mapFile(hostPath: string, mappings: PathMapping[]): { mapped: string; root: string } {
+	const mapping = mappingFor(hostPath, mappings);
+	if (!mapping) {
+		throw new UnmappedPathError(`"${hostPath}" is outside the mapped download roots.`);
+	}
+	return { mapped: mapHostPath(hostPath, mappings), root: mapping.dataRoot };
+}
+
 export async function scanJunk(detail: Torrent): Promise<CleanupScanResult> {
 	const cfg = env();
 	const result: CleanupScanResult = {
 		downloadDir: detail.downloadDir,
 		mapped: true,
+		enabled: true,
 		junk: [],
 		totalOnDisk: 0
 	};
-	try {
-		mapHostPath(detail.downloadDir, cfg.hostDownloadDir, cfg.dataRoot);
-	} catch {
+	if (!mappingFor(detail.downloadDir, cfg.mappings)) {
 		result.mapped = false;
+		result.enabled = false;
+		return result;
+	}
+	if (!locationEnabled(detail.downloadDir, await getLocations())) {
+		result.enabled = false;
 		return result;
 	}
 
@@ -60,11 +75,7 @@ export async function scanJunk(detail: Torrent): Promise<CleanupScanResult> {
 		let partial = false;
 		for (const variant of diskVariants(file.name)) {
 			try {
-				const mapped = mapHostPath(
-					posix.join(detail.downloadDir, variant),
-					cfg.hostDownloadDir,
-					cfg.dataRoot
-				);
+				const { mapped } = mapFile(posix.join(detail.downloadDir, variant), cfg.mappings);
 				const bytes = await diskUsage(mapped);
 				sizeOnDisk += bytes;
 				if (bytes > 0 && variant !== file.name) partial = true;
@@ -78,7 +89,7 @@ export async function scanJunk(detail: Torrent): Promise<CleanupScanResult> {
 	return result;
 }
 
-/** Remove empty directories up to (but not including) the mount root. */
+/** Remove empty directories up to (but not including) the torrent's own download dir. */
 async function pruneEmptyDirs(dir: string, stopAt: string): Promise<void> {
 	while (dir.startsWith(stopAt.endsWith('/') ? stopAt : stopAt + '/') && dir !== stopAt) {
 		try {
@@ -100,23 +111,25 @@ export async function deleteJunk(detail: Torrent): Promise<CleanupDeleteResult> 
 	const cfg = env();
 	const scan = await scanJunk(detail);
 	const result: CleanupDeleteResult = { ...scan, deleted: 0, freed: 0, failed: [] };
-	if (!scan.mapped) return result;
+	if (!scan.mapped || !scan.enabled) return result;
 
-	const rootReal = await resolveContained(cfg.dataRoot, cfg.dataRoot).catch(() => null);
+	// Pruning never climbs above the torrent's own download dir, even though
+	// the mounted root it sits under may be much broader.
+	const locationRootReal = await realpathSafe(mapHostPath(detail.downloadDir, cfg.mappings));
 
 	for (const entry of scan.junk) {
 		try {
 			let removedAny = false;
 			for (const variant of diskVariants(entry.name)) {
 				const hostPath = posix.join(detail.downloadDir, variant);
-				const mapped = mapHostPath(hostPath, cfg.hostDownloadDir, cfg.dataRoot);
-				const resolved = await resolveContained(cfg.dataRoot, mapped);
+				const { mapped, root } = mapFile(hostPath, cfg.mappings);
+				const resolved = await resolveContained(root, mapped);
 				if (!resolved) continue; // this variant is not on disk
 				const bytes = await diskUsage(resolved);
 				await unlink(resolved);
 				result.freed += bytes;
 				removedAny = true;
-				if (rootReal) await pruneEmptyDirs(posix.dirname(resolved), rootReal);
+				if (locationRootReal) await pruneEmptyDirs(posix.dirname(resolved), locationRootReal);
 			}
 			if (removedAny) result.deleted++;
 		} catch (e) {

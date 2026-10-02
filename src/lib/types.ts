@@ -60,8 +60,8 @@ export interface SessionInfo {
 export interface ClientConfig {
 	rpcUrl: string;
 	moveDestination: string;
-	hostDownloadDir: string;
-	dataRoot: string;
+	/** Host directories mounted into the container at the same path (HOST_DOWNLOAD_ROOTS). */
+	hostDownloadRoots: string[];
 	mapped: boolean;
 }
 
@@ -76,7 +76,10 @@ export interface JunkEntry {
 
 export interface CleanupScanResult {
 	downloadDir: string;
+	/** True when the download dir sits under a mounted root (HOST_DOWNLOAD_ROOTS). */
 	mapped: boolean;
+	/** True when the location is enabled for cleanup in the app. */
+	enabled: boolean;
 	junk: JunkEntry[];
 	totalOnDisk: number;
 }

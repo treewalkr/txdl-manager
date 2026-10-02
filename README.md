@@ -40,12 +40,12 @@ On untrusted networks, also enable RPC auth and set `TRANSMISSION_RPC_USERNAME` 
 ## Usage
 
 ```bash
-cp .env.example .env   # set HOST_DOWNLOAD_DIR=<Transmission's download dir>, MOVE_DESTINATION=<HDD path>
+cp .env.example .env   # set HOST_DOWNLOAD_ROOTS=<roots covering your download dirs>, MOVE_DESTINATION=<HDD path>
 docker compose up -d --build
 open http://localhost:3000
 ```
 
-`HOST_DOWNLOAD_DIR` is mounted read-write at `/data` — that's what makes junk-file deletion possible (RPC can only delete whole-torrent data). Leave it unset to run without file access.
+`HOST_DOWNLOAD_ROOTS` lists host directories (comma-separated) that are bind-mounted **at the same paths** into the container — that's what makes junk-file deletion possible (RPC can only delete whole-torrent data). Any Transmission download dir under those roots works; enable it once from a torrent's *Junk cleanup* panel and the choice persists.
 
 ## Development
 
@@ -65,9 +65,10 @@ The mock's download dir maps to `dev-fixtures/` on disk, so junk cleanup really 
 | `APP_PORT` | `3000` | Local port for the UI (127.0.0.1 only) |
 | `TRANSMISSION_RPC_URL` | `http://host.docker.internal:9091/transmission/rpc` | RPC endpoint |
 | `TRANSMISSION_RPC_USERNAME` / `_PASSWORD` | — | Only if RPC auth is enabled |
-| `HOST_DOWNLOAD_DIR` | *(unset)* | Transmission's download dir on the host, mounted RW at `/data` |
+| `HOST_DOWNLOAD_ROOTS` | *(unset)* | Host roots covering Transmission's download dirs, each mounted RW in docker-compose.yml at the same path |
 | `MOVE_DESTINATION` | *(unset)* | HDD path preset for the Move dialog |
 | `FFMPEG_PATH` / `FFPROBE_PATH` | `ffmpeg` / `ffprobe` | Override the playback tool binaries |
 | `HR_STATE_FILE` | `/state/hr-state.json` in Docker, `.data/hr-state.json` in dev | "Removed from HR" overrides |
+| `LOCATIONS_STATE_FILE` | `/state/locations.json` in Docker, `.data/locations.json` in dev | Download locations enabled for cleanup |
 
-The app has no authentication and binds to `127.0.0.1` only — don't expose it beyond localhost. The delete endpoint resolves real paths and refuses anything escaping `/data` (see `src/lib/server/paths.ts` and its tests).
+The app has no authentication and binds to `127.0.0.1` only — don't expose it beyond localhost. The delete endpoint only touches locations you enabled, resolves real paths, and refuses anything escaping the mounted roots or the torrent's own download dir (see `src/lib/server/paths.ts` and its tests).

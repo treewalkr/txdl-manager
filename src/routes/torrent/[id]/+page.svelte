@@ -105,6 +105,12 @@
 		}
 	}
 
+	async function toggleLocation(on: boolean) {
+		if (!torrent) return;
+		const ok = await store.setLocation(torrent.downloadDir, on);
+		if (ok) void runScan();
+	}
+
 	const fileRows = $derived(
 		files.map((f, i) => {
 			const multi = files.length > 1 && files.some((x) => x.name.includes('/'));
@@ -258,10 +264,23 @@
 			</p>
 			{#if scan && !scan.mapped}
 				<p class="warn">
-					The download directory <code>{scan.downloadDir}</code> is not mapped into this app.
-					Set <code>HOST_DOWNLOAD_DIR</code> in <code>.env</code> to the same path Transmission
-					uses, and mount it (see docker-compose.yml).
+					{#if store.config?.hostDownloadRoots?.length}
+						The download directory <code>{scan.downloadDir}</code> is not under any mounted
+						root ({#each store.config.hostDownloadRoots as r, i}{#if i}, {/if}<code>{r}</code>{/each}).
+						Add a root covering it to <code>HOST_DOWNLOAD_ROOTS</code> in <code>.env</code>,
+						mount it at the same path in docker-compose.yml, and restart the container.
+					{:else}
+						No download roots are configured — set <code>HOST_DOWNLOAD_ROOTS</code> in
+						<code>.env</code> to the host directories Transmission downloads into, mount them
+						at the same paths in docker-compose.yml, and restart the container.
+					{/if}
 				</p>
+			{:else if scan && !scan.enabled}
+				<p class="warn">
+					The download directory <code>{scan.downloadDir}</code> is mounted but not enabled
+					for cleanup. Enabling lets this app delete unselected junk files under it.
+				</p>
+				<button class="btn" onclick={() => void toggleLocation(true)}>Enable this location</button>
 			{:else if scan}
 				{#if scan.junk.length === 0}
 					<p class="ok-text">No unselected files on disk — nothing to clean. 🎉</p>
@@ -284,6 +303,10 @@
 						Delete {scan.junk.length} file(s), free {fmtBytes(scan.totalOnDisk)}
 					</button>
 				{/if}
+				<p class="hint">
+					<span class="mono dim">{scan.downloadDir}</span> is enabled for cleanup —
+					<button class="btn sm" onclick={() => void toggleLocation(false)}>Disable</button>
+				</p>
 			{/if}
 			{#if cleanupResult && cleanupResult.failed.length > 0}
 				<ul class="err-list">
