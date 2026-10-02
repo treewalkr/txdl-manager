@@ -72,7 +72,10 @@ async function ffmpegResponse(
 				resolve(ok);
 			}
 		};
-		child.stdout.once('data', () => done(true));
+		// 'readable' signals output WITHOUT consuming it — a 'data' listener
+		// would swallow the first chunk (the ftyp+moov init segment) before
+		// Readable.toWeb attaches, leaving the stream unplayable.
+		child.stdout.once('readable', () => done(true));
 		child.once('error', () => done(false)); // binary missing / not executable
 		child.once('exit', (code) => done(code === 0)); // died before writing anything
 		const slowStart = setTimeout(() => done(true), 3_000);

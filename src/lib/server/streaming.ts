@@ -62,11 +62,12 @@ export interface MediaProbe {
 	videoCodec: string | null;
 	audioCodec: string | null;
 	hasAudio: boolean;
+	pixFmt: string | null;
 }
 
 interface FfprobeJson {
 	format?: { duration?: string };
-	streams?: { codec_type?: string; codec_name?: string }[];
+	streams?: { codec_type?: string; codec_name?: string; pix_fmt?: string }[];
 }
 
 /** Codec families the browser decodes without help — direct-play eligibility. */
@@ -75,6 +76,8 @@ const BROWSER_AUDIO = new Set(['aac', 'mp3', 'opus', 'vorbis', 'flac']);
 /** Codecs ffmpeg may stream-copy while repackaging into fragmented MP4. */
 const COPY_VIDEO = new Set(['h264']);
 const COPY_AUDIO = new Set(['aac']);
+/** Only 8-bit 4:2:0 decodes reliably in browsers — Hi10P/10-bit and 4:2:2/444 need conversion (codec_name alone still says "h264"). */
+const BROWSER_PIX_FMT = 'yuv420p';
 /** Containers the <video> element reads directly. */
 const DIRECT_CONTAINERS = new Set(['mp4', 'm4v', 'webm', 'ogv', 'mov']);
 
@@ -95,7 +98,8 @@ async function runProbe(path: string): Promise<MediaProbe | null> {
 			durationSec: Number.isFinite(duration) && duration > 0 ? duration : null,
 			videoCodec: video?.codec_name ?? null,
 			audioCodec: audio?.codec_name ?? null,
-			hasAudio: Boolean(audio)
+			hasAudio: Boolean(audio),
+			pixFmt: video?.pix_fmt ?? null
 		};
 	} catch {
 		return null; // ffprobe missing, unreadable file, timeout — caller degrades
@@ -145,7 +149,10 @@ export function resetToolingCache(): void {
 export function decideMode(fileName: string, probe: MediaProbe | null, ffmpeg: boolean): StreamMode {
 	const ext = extOf(fileName);
 	const videoSafe =
-		probe !== null && probe.videoCodec !== null && BROWSER_VIDEO.has(probe.videoCodec);
+		probe !== null &&
+		probe.videoCodec !== null &&
+		BROWSER_VIDEO.has(probe.videoCodec) &&
+		probe.pixFmt === BROWSER_PIX_FMT;
 	const audioSafe = probe === null || !probe.hasAudio || BROWSER_AUDIO.has(probe.audioCodec ?? '');
 	const codecsSafe = videoSafe && audioSafe;
 
@@ -168,7 +175,11 @@ export function decideMode(fileName: string, probe: MediaProbe | null, ffmpeg: b
  * keeps ffmpeg from outrunning the viewer and buffering a whole movie.
  */
 export function buildFfmpegArgs(input: string, startSec: number, probe: MediaProbe | null): string[] {
-	const videoCopy = probe !== null && probe.videoCodec !== null && COPY_VIDEO.has(probe.videoCodec);
+	const videoCopy =
+		probe !== null &&
+		probe.videoCodec !== null &&
+		COPY_VIDEO.has(probe.videoCodec) &&
+		probe.pixFmt === BROWSER_PIX_FMT;
 	const audioCopy = probe !== null && probe.hasAudio && COPY_AUDIO.has(probe.audioCodec ?? '');
 
 	const args = ['-hide_banner', '-loglevel', 'error', '-nostdin'];

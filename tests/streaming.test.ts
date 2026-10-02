@@ -47,11 +47,12 @@ describe('parseRange', () => {
 
 /* ---------- decideMode ---------- */
 
-const probe = (videoCodec: string | null, audioCodec: string | null): MediaProbe => ({
+const probe = (videoCodec: string | null, audioCodec: string | null, pixFmt = 'yuv420p'): MediaProbe => ({
 	durationSec: 600,
 	videoCodec,
 	audioCodec,
-	hasAudio: audioCodec !== null
+	hasAudio: audioCodec !== null,
+	pixFmt
 });
 
 describe('decideMode', () => {
@@ -72,6 +73,11 @@ describe('decideMode', () => {
 		expect(decideMode('a.mkv', probe('h264', 'ac3'), true)).toBe('transcode'); // audio needs converting
 		expect(decideMode('a.mp4', probe('hevc', 'aac'), true)).toBe('transcode');
 		expect(decideMode('a.mkv', null, true)).toBe('transcode');
+	});
+
+	it('transcodes 10-bit / non-4:2:0 h264 even though the codec name is browser-safe', () => {
+		expect(decideMode('a.mkv', probe('h264', 'aac', 'yuv420p10le'), true)).toBe('transcode');
+		expect(decideMode('a.mkv', probe('h264', 'aac', 'yuv422p'), true)).toBe('transcode');
 	});
 
 	it('gives up on foreign containers without ffmpeg', () => {
@@ -100,6 +106,12 @@ describe('buildFfmpegArgs', () => {
 
 	it('drops audio when the file has none', () => {
 		expect(buildFfmpegArgs('/x/a.mkv', 0, probe('h264', null))).toContain('-an');
+	});
+
+	it('never stream-copies 10-bit video even though the codec is h264', () => {
+		const args = buildFfmpegArgs('/x/a.mkv', 0, probe('h264', 'aac', 'yuv420p10le'));
+		expect(args.join(' ')).toContain('-c:v libx264');
+		expect(args.join(' ')).toContain('-pix_fmt yuv420p');
 	});
 
 	it('converts audio when the probe found nothing (cannot assume silence)', () => {
