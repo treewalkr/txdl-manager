@@ -157,6 +157,12 @@ code {
 	color: var(--text);
 }
 
+.app-ver {
+	font-size: 11.5px;
+	color: var(--dim);
+	white-space: nowrap;
+}
+
 .conn {
 	display: inline-flex;
 	align-items: center;

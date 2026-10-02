@@ -40,6 +40,7 @@
 			<span title="Total download speed">↓ {fmtSpeed(downTotal)}</span>
 			<span title="Total upload speed">↑ {fmtSpeed(upTotal)}</span>
 		</div>
+		<span class="app-ver" title="txdl-manager build (git describe; package.json version in Docker)">{__APP_VERSION__}</span>
 		<span
 			class="conn {store.connected ? 'on' : 'off'}"
 			title={store.connected ? `Transmission ${store.session?.version ?? ''} — ${store.config?.rpcUrl ?? ''}` : (store.error ?? 'Connecting…')}

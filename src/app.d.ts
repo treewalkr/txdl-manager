@@ -8,6 +8,9 @@ declare global {
 		// interface PageState {}
 		// interface Platform {}
 	}
+
+	// injected by vite `define` in vite.config.ts (git describe; package.json in Docker builds)
+	const __APP_VERSION__: string;
 }
 
 export {};

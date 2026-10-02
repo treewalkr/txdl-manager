@@ -1,8 +1,24 @@
+import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import adapter from '@sveltejs/adapter-node';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
+// .git is dockerignored, so container builds fall back to package.json's version
+const appVersion = (() => {
+	try {
+		return execSync('git describe --tags --always --dirty', {
+			stdio: ['ignore', 'pipe', 'ignore']
+		}).toString().trim();
+	} catch {
+		return `v${JSON.parse(readFileSync('package.json', 'utf8')).version}`;
+	}
+})();
+
 export default defineConfig({
+	define: {
+		__APP_VERSION__: JSON.stringify(appVersion)
+	},
 	plugins: [
 		sveltekit({
 			compilerOptions: {
