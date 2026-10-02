@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { fmtBytes } from '$lib/format';
 	import { untrack } from 'svelte';
 
@@ -7,6 +8,7 @@
 	// remux/transcode streams are piped fMP4: seeking reloads the stream with a
 	// new ?t= offset; "direct" seeks natively via currentTime.
 	const piped = $derived(data.mode === 'remux' || data.mode === 'transcode');
+	const isImage = $derived(data.kind === 'image');
 
 	let videoEl = $state<HTMLVideoElement | undefined>();
 	let stageEl = $state<HTMLDivElement | undefined>();
@@ -25,12 +27,49 @@
 	let scrub = $state<number | null>(null); // non-null while dragging the timeline
 	let resumedNote = $state('');
 	let loadError = $state('');
+	let listOpen = $state(false); // track-list overlay (persists across switches)
+	let switchNote = $state('');
 
 	const MODE_LABEL: Record<string, string> = {
 		direct: 'DIRECT',
 		remux: 'REMUX',
 		transcode: 'TRANSCODE'
 	};
+
+	/* ---------- the torrent's playable files ---------- */
+
+	const tracks = $derived(data.tracks ?? []);
+	const trackPos = $derived(tracks.findIndex((t) => t.index === data.index));
+	const hasPlaylist = $derived(tracks.length >= 2);
+	// arrows switch tracks only when there's somewhere to switch to; with a
+	// single playable file they keep their volume role
+	const switchable = $derived(hasPlaylist && tracks.filter((t) => t.complete).length >= 2);
+
+	function switchTrack(delta: 1 | -1) {
+		if (!data.torrent) return;
+		let i = trackPos;
+		for (;;) {
+			i += delta;
+			if (i < 0) return note('FIRST TRACK');
+			if (i >= tracks.length) return note('LAST TRACK');
+			if (tracks[i].complete) {
+				void goto(`/torrent/${data.torrent.id}/play?file=${tracks[i].index}`, { noScroll: true });
+				return;
+			}
+		}
+	}
+
+	function openTrack(index: number, complete: boolean) {
+		if (!complete || !data.torrent || index === data.index) return;
+		void goto(`/torrent/${data.torrent.id}/play?file=${index}`, { noScroll: true });
+	}
+
+	let switchNoteTimer: ReturnType<typeof setTimeout> | undefined;
+	function note(text: string) {
+		switchNote = text;
+		clearTimeout(switchNoteTimer);
+		switchNoteTimer = setTimeout(() => (switchNote = ''), 1500);
+	}
 
 	function streamUrl(t: number): string {
 		const base = `/api/torrents/${data.torrent?.id}/stream/${data.index}`;
@@ -50,34 +89,31 @@
 	/* ---------- resume positions (localStorage, best-effort) ---------- */
 
 	const RESUME_KEY = 'txdl.resume.v1';
-	const resumeKey = $derived(`${data.torrent?.hashString ?? ''}:${data.index}`);
 
-	function readResume(): number {
+	function readResume(key: string): number {
 		try {
 			const map = JSON.parse(localStorage.getItem(RESUME_KEY) ?? '{}') as Record<string, number>;
-			const v = map[resumeKey];
+			const v = map[key];
 			return Number.isFinite(v) ? v : 0;
 		} catch {
 			return 0;
 		}
 	}
 
-	let lastSaved = 0;
-	function saveResume(seconds: number) {
+	function saveResume(key: string, seconds: number) {
 		try {
 			const map = JSON.parse(localStorage.getItem(RESUME_KEY) ?? '{}') as Record<string, number>;
-			map[resumeKey] = seconds;
+			map[key] = seconds;
 			localStorage.setItem(RESUME_KEY, JSON.stringify(map));
-			lastSaved = seconds;
 		} catch {
 			/* private mode etc. — resume is best-effort */
 		}
 	}
 
-	function clearResume() {
+	function clearResume(key: string) {
 		try {
 			const map = JSON.parse(localStorage.getItem(RESUME_KEY) ?? '{}') as Record<string, number>;
-			delete map[resumeKey];
+			delete map[key];
 			localStorage.setItem(RESUME_KEY, JSON.stringify(map));
 		} catch {
 			/* ignore */
@@ -222,11 +258,21 @@
 				break;
 			case 'ArrowUp':
 				e.preventDefault();
-				setVolume(volume + 0.1);
+				if (switchable) switchTrack(-1);
+				else setVolume(volume + 0.1);
 				break;
 			case 'ArrowDown':
 				e.preventDefault();
+				if (switchable) switchTrack(1);
+				else setVolume(volume - 0.1);
+				break;
+			case '-':
+			case '_':
 				setVolume(volume - 0.1);
+				break;
+			case '=':
+			case '+':
+				setVolume(volume + 0.1);
 				break;
 			case 'm':
 			case 'M':
@@ -236,18 +282,30 @@
 			case 'F':
 				void toggleFullscreen();
 				break;
+			case 't':
+			case 'T':
+				if (hasPlaylist) listOpen = !listOpen;
+				break;
 			case 'Escape':
-				// let the browser exit fullscreen on its own; otherwise leave
+				// close the track list first, then let Esc leave fullscreen /
+				// navigate back
+				if (listOpen) {
+					listOpen = false;
+					break;
+				}
 				if (!document.fullscreenElement) history.back();
 				break;
 		}
 	}
 
-	/* ---------- video element events ---------- */
+	/* ---------- media element events ---------- */
 
 	function onLoadedMetadata() {
-		if (!piped && videoEl && Number.isFinite(videoEl.duration)) dur = videoEl.duration;
-		if (pendingResume > 0 && !piped && videoEl) {
+		if (!videoEl) return;
+		videoEl.volume = volume;
+		videoEl.muted = muted;
+		if (!piped && Number.isFinite(videoEl.duration)) dur = videoEl.duration;
+		if (pendingResume > 0) {
 			videoEl.currentTime = pendingResume;
 			pendingResume = 0;
 		}
@@ -261,45 +319,70 @@
 	function onTimeUpdate() {
 		if (!videoEl) return;
 		pos = piped ? offsetBase + videoEl.currentTime : videoEl.currentTime;
-		if (Math.abs(pos - lastSaved) > 5) saveResume(pos);
+		if (Math.abs(pos - lastSaved) > 5) {
+			saveResume(`${data.torrent?.hashString}:${data.index}`, pos);
+			lastSaved = pos;
+		}
 	}
 
 	function onEnded() {
 		playing = false;
-		clearResume();
+		clearResume(`${data.torrent?.hashString}:${data.index}`);
 	}
 
-	/* ---------- mount: initial source + resume ---------- */
+	/* ---------- per-track init (re-runs on every track switch) ---------- */
 
-	// One-shot init on mount; `data` is static for this navigation, everything
-	// else is read untracked so later dur/src writes don't re-run this.
+	let lastInitIndex = -1;
+	let lastSaved = 0;
+
 	$effect(() => {
 		if (!data.torrent || data.problem) return;
+		const key = `${data.torrent.hashString}:${data.index}`;
 
 		untrack(() => {
-			if (dur === 0 && data.durationSec) dur = data.durationSec;
-			const saved = readResume();
+			if (lastInitIndex === data.index) return; // same track, don't restart
+			lastInitIndex = data.index;
+
+			// reset everything that belongs to the previous track
+			pos = 0;
+			offsetBase = 0;
+			playing = false;
+			wantPlay = true;
+			buffering = false;
+			loadError = '';
+			scrub = null;
+			pendingResume = 0;
+			resumedNote = '';
+			lastSaved = 0;
+			dur = data.durationSec ?? 0;
+
+			if (isImage) {
+				src = streamUrl(0);
+				return;
+			}
+
+			const saved = readResume(key);
 			const startAt = saved > 30 && (dur === 0 || saved < dur - 60) ? saved : 0;
 			if (startAt > 0) {
 				resumedNote = `resumed at ${fmtClock(startAt)}`;
 				if (piped) {
 					offsetBase = startAt;
 					pos = startAt;
-					src = streamUrl(startAt);
 				} else {
 					pendingResume = startAt;
 				}
 			}
-			if (src === '') src = streamUrl(0);
+			src = streamUrl(startAt);
 		});
 
 		const clearNote = setTimeout(() => (resumedNote = ''), 6000);
-		const onHide = () => saveResume(pos);
+		const onHide = () => saveResume(key, pos);
 		window.addEventListener('pagehide', onHide);
 		return () => {
 			clearTimeout(clearNote);
 			window.removeEventListener('pagehide', onHide);
-			saveResume(pos);
+			// pos still holds the previous track's position at cleanup time
+			saveResume(key, pos);
 		};
 	});
 </script>
@@ -332,74 +415,138 @@
 					{fmtBytes(data.sizeBytes)} · {data.torrent.downloadDir}
 				</span>
 			</div>
-			<span class="badge st-{data.mode}">{MODE_LABEL[data.mode ?? '']}</span>
+			{#if data.mode}
+				<span class="badge st-{data.mode}">{MODE_LABEL[data.mode]}</span>
+			{/if}
 		</header>
 
 		<div class="player-stage" bind:this={stageEl}>
-			<!-- svelte-ignore a11y_media_has_caption -->
-			<video
-				bind:this={videoEl}
-				{src}
-				preload="metadata"
-				playsinline
-				onloadedmetadata={onLoadedMetadata}
-				oncanplay={onCanPlay}
-				ontimeupdate={onTimeUpdate}
-				onplaying={() => (buffering = false)}
-				onwaiting={() => (buffering = true)}
-				onplay={() => (playing = true)}
-				onpause={() => (playing = false)}
-				onended={onEnded}
-				onerror={() => (loadError = 'The browser could not play this stream.')}
-			></video>
+			{#if isImage}
+				<img {src} alt={data.fileName} draggable="false" onerror={() => (loadError = 'The image could not be loaded.')} />
+			{:else}
+				<!-- svelte-ignore a11y_media_has_caption -->
+				<video
+					bind:this={videoEl}
+					{src}
+					preload="metadata"
+					playsinline
+					onloadedmetadata={onLoadedMetadata}
+					oncanplay={onCanPlay}
+					ontimeupdate={onTimeUpdate}
+					onplaying={() => (buffering = false)}
+					onwaiting={() => (buffering = true)}
+					onplay={() => (playing = true)}
+					onpause={() => (playing = false)}
+					onended={onEnded}
+					onerror={() => (loadError = 'The browser could not play this stream.')}
+				></video>
+			{/if}
+
+			{#if listOpen && tracks.length > 0}
+				<div class="player-tracks">
+					<div class="player-tracks-head">Tracks ({tracks.length})</div>
+					<ul>
+						{#each tracks as t, i (t.index)}
+							<li>
+								<button
+									class="track-row"
+									class:current={t.index === data.index}
+									class:incomplete={!t.complete}
+									disabled={!t.complete}
+									title={!t.complete ? 'Still downloading' : t.name}
+									onclick={() => openTrack(t.index, t.complete)}
+								>
+									<span class="track-idx">{t.index === data.index ? '▸' : String(i + 1).padStart(2, '0')}</span>
+									<span class="track-name">{t.name}</span>
+								</button>
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
+
 			{#if buffering}
 				<div class="player-overlay">BUFFERING</div>
 			{:else if loadError}
 				<div class="player-overlay err">{loadError}</div>
-			{:else if !playing}
+			{:else if switchNote}
+				<div class="player-overlay">{switchNote}</div>
+			{:else if !playing && !isImage}
 				<button class="player-bigplay" onclick={togglePlay} aria-label="Play">▶</button>
 			{/if}
 		</div>
 
 		<footer class="player-transport">
-			<button class="player-btn" onclick={togglePlay} aria-label={playing ? 'Pause' : 'Play'}>
-				{playing ? '❚❚' : '▶'}
-			</button>
-			<div
-				class="timeline"
-				role="slider"
-				aria-label="Seek"
-				aria-valuemin={0}
-				aria-valuemax={Math.max(Math.round(dur), 0)}
-				aria-valuenow={Math.round(scrub ?? pos)}
-				tabindex="0"
-				onpointerdown={onScrubDown}
-				onpointermove={onScrubMove}
-				onpointerup={onScrubUp}
-				onpointercancel={onScrubUp}
-				onkeydown={onScrubKey}
-			>
-				<div class="timeline-fill" style="width: {dur > 0 ? Math.min(((scrub ?? pos) / dur) * 100, 100) : 0}%"></div>
-			</div>
-			<span class="player-clock num">{fmtClock(scrub ?? pos)} / {fmtClock(dur)}</span>
-			<button class="player-btn" onclick={toggleMute} aria-label={muted || volume === 0 ? 'Unmute' : 'Mute'}>
-				{muted || volume === 0 ? '×' : '♪'}
-			</button>
-			<div
-				class="vol-meter"
-				role="slider"
-				aria-label="Volume"
-				aria-valuemin={0}
-				aria-valuemax={100}
-				aria-valuenow={Math.round((muted ? 0 : volume) * 100)}
-				tabindex="0"
-				onpointerdown={onVolumePointer}
-				onkeydown={onVolumeKey}
-			>
-				<span class="blocks-chars">
-					{'█'.repeat(Math.round((muted ? 0 : volume) * 8)) + '░'.repeat(8 - Math.round((muted ? 0 : volume) * 8))}
-				</span>
-			</div>
+			{#if isImage}
+				{#if switchable}
+					<button class="player-btn" onclick={() => switchTrack(-1)} title="Previous file (↑)" aria-label="Previous file">▲</button>
+				{/if}
+				{#if hasPlaylist}
+					<span class="track-counter">FILE {trackPos + 1}/{tracks.length}</span>
+				{/if}
+				{#if switchable}
+					<button class="player-btn" onclick={() => switchTrack(1)} title="Next file (↓)" aria-label="Next file">▼</button>
+				{/if}
+				<span class="transport-spacer"></span>
+			{:else}
+				{#if switchable}
+					<button class="player-btn" onclick={() => switchTrack(-1)} title="Previous file (↑)" aria-label="Previous file">▲</button>
+				{/if}
+				<button class="player-btn" onclick={togglePlay} aria-label={playing ? 'Pause' : 'Play'}>
+					{playing ? '❚❚' : '▶'}
+				</button>
+				{#if switchable}
+					<button class="player-btn" onclick={() => switchTrack(1)} title="Next file (↓)" aria-label="Next file">▼</button>
+				{/if}
+				<div
+					class="timeline"
+					role="slider"
+					aria-label="Seek"
+					aria-valuemin={0}
+					aria-valuemax={Math.max(Math.round(dur), 0)}
+					aria-valuenow={Math.round(scrub ?? pos)}
+					tabindex="0"
+					onpointerdown={onScrubDown}
+					onpointermove={onScrubMove}
+					onpointerup={onScrubUp}
+					onpointercancel={onScrubUp}
+					onkeydown={onScrubKey}
+				>
+					<div class="timeline-fill" style="width: {dur > 0 ? Math.min(((scrub ?? pos) / dur) * 100, 100) : 0}%"></div>
+				</div>
+				<span class="player-clock num">{fmtClock(scrub ?? pos)} / {fmtClock(dur)}</span>
+				<button class="player-btn" onclick={toggleMute} aria-label={muted || volume === 0 ? 'Unmute' : 'Mute'}>
+					{muted || volume === 0 ? '×' : '♪'}
+				</button>
+				<div
+					class="vol-meter"
+					role="slider"
+					aria-label="Volume"
+					aria-valuemin={0}
+					aria-valuemax={100}
+					aria-valuenow={Math.round((muted ? 0 : volume) * 100)}
+					tabindex="0"
+					onpointerdown={onVolumePointer}
+					onkeydown={onVolumeKey}
+				>
+					<span class="blocks-chars">
+						{'█'.repeat(Math.round((muted ? 0 : volume) * 8)) + '░'.repeat(8 - Math.round((muted ? 0 : volume) * 8))}
+					</span>
+				</div>
+				{#if hasPlaylist}
+					<span class="track-counter">TRACK {trackPos + 1}/{tracks.length}</span>
+				{/if}
+			{/if}
+			{#if hasPlaylist}
+				<button
+					class="player-btn"
+					onclick={() => (listOpen = !listOpen)}
+					aria-pressed={listOpen}
+					title="Track list (T)"
+				>
+					≡
+				</button>
+			{/if}
 			{#if resumedNote}
 				<span class="player-note dim">{resumedNote}</span>
 			{/if}

@@ -4,7 +4,7 @@ import { stat } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { mimeFor } from '$lib/media';
+import { mimeFor, isImageFile } from '$lib/media';
 import { env } from '$lib/server/config';
 import { fail } from '$lib/server/http';
 import {
@@ -107,6 +107,9 @@ export const GET: RequestHandler = async ({ params, request, url }) => {
 		if (!detail) return json({ error: 'torrent not found' }, { status: 404 });
 
 		const { file, path } = await resolveStreamFile(detail, index);
+		// images are just bytes for an <img> — no probe, no ffmpeg
+		if (isImageFile(file.name)) return await directResponse(path, file.name, request.headers.get('range'));
+
 		const [probe, ffmpeg] = await Promise.all([probeMedia(path), ffmpegAvailable()]);
 		const mode = decideMode(file.name, probe, ffmpeg);
 

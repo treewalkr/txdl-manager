@@ -14,7 +14,7 @@ SvelteKit 2 / Svelte 5 (runes) frontend over the Transmission RPC API, packaged 
 - Archive-ready badge for torrents that are complete and seeded enough (ratio ≥ 2 or ≥ 72 h).
 - Per-torrent detail page with wanted/unwanted file checkboxes.
 - Junk cleanup of unselected files (incl. `.part` leftovers and empty dirs), guarded by a path-containment check.
-- In-browser video playback of completed files — MP4/WebM play directly; MKV/AVI/HEVC/etc. are remuxed or transcoded on the fly by ffmpeg (bundled in the Docker image; `brew install ffmpeg` for dev). Resumes where you left off.
+- In-browser playback of completed files — MP4/WebM play directly; MKV/AVI/HEVC/etc. are remuxed or transcoded on the fly by ffmpeg (bundled in the Docker image; `brew install ffmpeg` for dev); images view inline. ↑/↓ switches between a torrent's playable files. Resumes where you left off.
 - Move to HDD, remove (optionally with data), add magnet/.torrent URL, start/pause/verify.
 
 ## One-time Transmission setup

@@ -1,5 +1,5 @@
-// Shared (client + server) knowledge about video files: which torrent files
-// count as playable video, and the MIME type to serve raw bytes as.
+// Shared (client + server) knowledge about playable media files: which torrent
+// files count as video or images, and the MIME type to serve raw bytes as.
 
 const VIDEO_EXTENSIONS = new Set([
 	'mp4',
@@ -44,8 +44,19 @@ const MIME_BY_EXT: Record<string, string> = {
 	'3gp': 'video/3gpp',
 	divx: 'video/x-divx',
 	rm: 'application/vnd.rn-realmedia',
-	rmvb: 'application/vnd.rn-realmedia-vbr'
+	rmvb: 'application/vnd.rn-realmedia-vbr',
+	jpg: 'image/jpeg',
+	jpeg: 'image/jpeg',
+	png: 'image/png',
+	webp: 'image/webp',
+	gif: 'image/gif',
+	avif: 'image/avif',
+	bmp: 'image/bmp'
 };
+
+// No svg: served same-origin, a crafted one would run script in the app's
+// origin. No heic: Chrome/Firefox cannot decode it.
+const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'avif', 'bmp']);
 
 /** Lowercase extension without the dot ('' when none). */
 export function extOf(name: string): string {
@@ -61,6 +72,17 @@ export function extOf(name: string): string {
 export function isVideoFile(name: string): boolean {
 	if (name.endsWith('.part')) return false;
 	return VIDEO_EXTENSIONS.has(extOf(name));
+}
+
+/** Whether this torrent file is an image we may show in the player. */
+export function isImageFile(name: string): boolean {
+	if (name.endsWith('.part')) return false;
+	return IMAGE_EXTENSIONS.has(extOf(name));
+}
+
+/** Anything the play page can present: video or image. */
+export function isPlayableMedia(name: string): boolean {
+	return isVideoFile(name) || isImageFile(name);
 }
 
 export function mimeFor(name: string): string {

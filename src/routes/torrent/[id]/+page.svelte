@@ -5,7 +5,7 @@
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { fmtBytes, fmtDate, fmtDuration, fmtEta, fmtHours, fmtPercent, fmtRatio, fmtSpeed } from '$lib/format';
 	import { hrInfo, hrRuleHint } from '$lib/hr';
-	import { isVideoFile } from '$lib/media';
+	import { isPlayableMedia } from '$lib/media';
 	import { statusInfo } from '$lib/status';
 	import { store } from '$lib/stores/torrents.svelte';
 	import type { CleanupDeleteResult, CleanupScanResult } from '$lib/types';
@@ -118,7 +118,7 @@
 				depth,
 				wanted: stats[i]?.wanted ?? true,
 				completed,
-				video: isVideoFile(f.name),
+				playable: isPlayableMedia(f.name),
 				complete: completed >= f.length
 			};
 		})
@@ -324,7 +324,7 @@
 										/>
 									</td>
 									<td>
-										{#if row.video}
+										{#if row.playable}
 											{#if row.complete}
 												<a
 													class="file-play"

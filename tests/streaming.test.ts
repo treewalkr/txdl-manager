@@ -7,6 +7,7 @@ import {
 	buildFfmpegArgs,
 	decideMode,
 	parseRange,
+	pickPlayable,
 	resolveStreamFile,
 	type MediaProbe
 } from '../src/lib/server/streaming';
@@ -120,6 +121,33 @@ describe('buildFfmpegArgs', () => {
 	});
 });
 
+/* ---------- pickPlayable ---------- */
+
+describe('pickPlayable', () => {
+	it('lists videos and images in torrent order with completeness flags', () => {
+		const entries = pickPlayable(makeDetail());
+		expect(entries).toEqual([
+			{ index: 0, name: 'T/movie.mkv', kind: 'video', complete: true, length: 100 },
+			{ index: 1, name: 'T/half.mkv', kind: 'video', complete: false, length: 80 },
+			{ index: 3, name: 'T/poster.jpg', kind: 'image', complete: true, length: 10 },
+			{ index: 4, name: 'T/loading.png', kind: 'image', complete: false, length: 50 }
+		]);
+	});
+
+	it('falls back to the file record when stats are missing', () => {
+		const d = makeDetail();
+		d.fileStats = undefined;
+		const entries = pickPlayable(d);
+		expect(entries.map((e) => e.complete)).toEqual([true, false, true, false]);
+	});
+
+	it('returns nothing for torrents without playable files', () => {
+		const d = makeDetail();
+		d.files = [{ name: 'T/a.txt', length: 1, bytesCompleted: 1 }];
+		expect(pickPlayable(d)).toEqual([]);
+	});
+});
+
 /* ---------- resolveStreamFile (env-dependent, temp tree like cleanup tests) ---------- */
 
 const HOST_DIR = '/mock-host-downloads';
@@ -165,12 +193,16 @@ function makeDetail(): Torrent {
 		files: [
 			{ name: 'T/movie.mkv', length: 100, bytesCompleted: 100 },
 			{ name: 'T/half.mkv', length: 80, bytesCompleted: 40 },
-			{ name: 'T/note.txt', length: 3, bytesCompleted: 3 }
+			{ name: 'T/note.txt', length: 3, bytesCompleted: 3 },
+			{ name: 'T/poster.jpg', length: 10, bytesCompleted: 10 },
+			{ name: 'T/loading.png', length: 50, bytesCompleted: 10 }
 		],
 		fileStats: [
 			{ bytesCompleted: 100, wanted: true, priority: 0 },
 			{ bytesCompleted: 40, wanted: true, priority: 0 },
-			{ bytesCompleted: 3, wanted: true, priority: 0 }
+			{ bytesCompleted: 3, wanted: true, priority: 0 },
+			{ bytesCompleted: 10, wanted: true, priority: 0 },
+			{ bytesCompleted: 10, wanted: true, priority: 0 }
 		]
 	};
 }
@@ -181,6 +213,8 @@ async function writeFixtures() {
 	await writeFile(join(dataRoot, 'T/movie.mkv'), 'm'.repeat(100));
 	await writeFile(join(dataRoot, 'T/half.mkv.part'), 'h'.repeat(40));
 	await writeFile(join(dataRoot, 'T/note.txt'), 'abc');
+	await writeFile(join(dataRoot, 'T/poster.jpg'), 'j'.repeat(10));
+	await writeFile(join(dataRoot, 'T/loading.png.part'), 'p'.repeat(10));
 }
 
 async function expectStreamError(p: Promise<unknown>, status: number, fragment: string) {
@@ -212,9 +246,16 @@ describe('resolveStreamFile', () => {
 		expect(path.endsWith('T/movie.mkv')).toBe(true);
 	});
 
-	it('refuses non-video files, incomplete files, and bad indices', async () => {
-		await expectStreamError(resolveStreamFile(makeDetail(), 2), 400, 'not a video file');
+	it('resolves complete images too', async () => {
+		const { file, path } = await resolveStreamFile(makeDetail(), 3);
+		expect(file.name).toBe('T/poster.jpg');
+		expect(path.endsWith('T/poster.jpg')).toBe(true);
+	});
+
+	it('refuses non-media files, incomplete files, and bad indices', async () => {
+		await expectStreamError(resolveStreamFile(makeDetail(), 2), 400, 'not a playable media file');
 		await expectStreamError(resolveStreamFile(makeDetail(), 1), 409, '50% downloaded');
+		await expectStreamError(resolveStreamFile(makeDetail(), 4), 409, '20% downloaded');
 		await expectStreamError(resolveStreamFile(makeDetail(), 9), 404, 'no file #9');
 	});
 

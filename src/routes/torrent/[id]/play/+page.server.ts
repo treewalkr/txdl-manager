@@ -1,11 +1,14 @@
 import type { PageServerLoad } from './$types';
+import { isImageFile } from '$lib/media';
 import { PathEscapeError, UnmappedPathError } from '$lib/server/paths';
 import {
 	StreamError,
 	decideMode,
 	ffmpegAvailable,
+	pickPlayable,
 	probeMedia,
 	resolveStreamFile,
+	type PlayableEntry,
 	type StreamMode
 } from '$lib/server/streaming';
 import { getTorrentDetail } from '$lib/server/transmission';
@@ -22,9 +25,11 @@ export const load: PageServerLoad = async ({ params, url }) => {
 		index: 0,
 		fileName: '',
 		sizeBytes: 0,
+		kind: 'video' as const,
 		mode: null as StreamMode | null,
 		durationSec: null as number | null,
-		ffmpeg: false
+		ffmpeg: false,
+		tracks: [] as PlayableEntry[]
 	});
 
 	if (!Number.isInteger(id) || id < 0 || !Number.isInteger(index) || index < 0) {
@@ -41,6 +46,31 @@ export const load: PageServerLoad = async ({ params, url }) => {
 
 	try {
 		const { file, path } = await resolveStreamFile(detail, index);
+		const tracks = pickPlayable(detail).map((t) => ({
+			...t,
+			name: t.name.split('/').pop() || t.name
+		}));
+
+		if (isImageFile(file.name)) {
+			return {
+				problem: null,
+				torrent: {
+					id: detail.id,
+					name: detail.name,
+					hashString: detail.hashString,
+					downloadDir: detail.downloadDir
+				},
+				index,
+				fileName: file.name.split('/').pop() || file.name,
+				sizeBytes: file.length,
+				kind: 'image' as const,
+				mode: null,
+				durationSec: null,
+				ffmpeg: false,
+				tracks
+			};
+		}
+
 		const [probe, ffmpeg] = await Promise.all([probeMedia(path), ffmpegAvailable()]);
 		const mode: StreamMode = decideMode(file.name, probe, ffmpeg);
 		return {
@@ -60,9 +90,11 @@ export const load: PageServerLoad = async ({ params, url }) => {
 			index,
 			fileName: file.name.split('/').pop() || file.name,
 			sizeBytes: file.length,
+			kind: 'video' as const,
 			mode,
 			durationSec: probe?.durationSec ?? null,
-			ffmpeg
+			ffmpeg,
+			tracks
 		};
 	} catch (e) {
 		if (e instanceof StreamError) return failed(e.message);

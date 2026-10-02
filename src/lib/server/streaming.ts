@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { stat } from 'node:fs/promises';
 import { posix } from 'node:path';
 import { promisify } from 'node:util';
-import { extOf, isVideoFile } from '$lib/media';
+import { extOf, isImageFile, isPlayableMedia, isVideoFile } from '$lib/media';
 import type { Torrent, TorrentFile } from '$lib/types';
 import { env } from './config';
 import { containerPathFor, resolveContained } from './paths';
@@ -186,6 +186,38 @@ export function buildFfmpegArgs(input: string, startSec: number, probe: MediaPro
 	return args;
 }
 
+/* ---------- playable-file playlist ---------- */
+
+export interface PlayableEntry {
+	/** Index into detail.files — the ?file= param of the play route. */
+	index: number;
+	/** File name relative to the torrent's downloadDir. */
+	name: string;
+	kind: 'video' | 'image';
+	/** Fully downloaded? Incomplete entries are listed but not switchable. */
+	complete: boolean;
+	length: number;
+}
+
+/**
+ * The torrent's playable files in torrent order (so numbering matches the
+ * detail page's Files table). Incomplete videos/images are included but
+ * flagged — the track list shows them dim, the switcher skips them.
+ */
+export function pickPlayable(detail: Torrent): PlayableEntry[] {
+	const out: PlayableEntry[] = [];
+	const files = detail.files ?? [];
+	const stats = detail.fileStats ?? [];
+	for (let i = 0; i < files.length; i++) {
+		const f = files[i];
+		const kind = isVideoFile(f.name) ? 'video' : isImageFile(f.name) ? 'image' : null;
+		if (!kind) continue;
+		const completed = stats[i]?.bytesCompleted ?? f.bytesCompleted;
+		out.push({ index: i, name: f.name, kind, complete: completed >= f.length, length: f.length });
+	}
+	return out;
+}
+
 /* ---------- file resolution ---------- */
 
 export interface StreamFile {
@@ -195,9 +227,9 @@ export interface StreamFile {
 }
 
 /**
- * Gate-keep a torrent file for playback and locate it on disk: it must be a
- * video, fully downloaded (random piece order means partial files have holes),
- * and present inside the mapped download directory.
+ * Gate-keep a torrent file for playback and locate it on disk: it must be
+ * playable media (video or image), fully downloaded (random piece order means
+ * partial files have holes), and present inside the mapped download directory.
  */
 export async function resolveStreamFile(detail: Torrent, index: number): Promise<StreamFile> {
 	const files = detail.files ?? [];
@@ -206,7 +238,7 @@ export async function resolveStreamFile(detail: Torrent, index: number): Promise
 	}
 	const file = files[index];
 	if (!file) throw new StreamError(`no file #${index} in this torrent`, 404);
-	if (!isVideoFile(file.name)) throw new StreamError(`"${file.name}" is not a video file`, 400);
+	if (!isPlayableMedia(file.name)) throw new StreamError(`"${file.name}" is not a playable media file`, 400);
 	const completed = detail.fileStats?.[index]?.bytesCompleted ?? file.bytesCompleted;
 	if (completed < file.length) {
 		const pct = file.length > 0 ? Math.floor((completed / file.length) * 100) : 0;

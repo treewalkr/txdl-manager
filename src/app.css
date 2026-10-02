@@ -1320,6 +1320,109 @@ tr.selected.ready td:first-child {
 	display: block;
 }
 
+.player-stage img {
+	max-width: 100%;
+	max-height: 100%;
+	width: auto;
+	height: auto;
+	object-fit: contain;
+	display: block;
+	user-select: none;
+}
+
+/* track list: bordered pane docked over the stage's right edge */
+.player-tracks {
+	position: absolute;
+	top: 12px;
+	right: 12px;
+	bottom: 12px;
+	width: min(360px, 60vw);
+	display: flex;
+	flex-direction: column;
+	background: var(--panel);
+	border: 1px solid var(--border);
+}
+
+.player-tracks-head {
+	font-size: 10.5px;
+	font-weight: 700;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+	color: var(--muted);
+	padding: 8px 10px;
+	border-bottom: 1px solid var(--border-soft);
+	flex: none;
+}
+
+.player-tracks ul {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	overflow-y: auto;
+	flex: 1;
+}
+
+.track-row {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	width: 100%;
+	text-align: left;
+	font: inherit;
+	color: var(--text);
+	background: none;
+	border: 0;
+	border-bottom: 1px solid var(--border-soft);
+	padding: 5px 10px;
+	cursor: pointer;
+}
+
+.track-row:hover {
+	background: var(--panel-hover);
+}
+
+.track-row.current {
+	background: var(--sel-bg);
+	color: var(--sel-ink);
+}
+
+.track-row.incomplete {
+	color: var(--dim);
+	cursor: default;
+}
+
+.track-row.incomplete:hover {
+	background: none;
+}
+
+.track-idx {
+	flex: none;
+	font-size: 10.5px;
+	color: var(--muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.track-row.current .track-idx {
+	color: var(--sel-dim);
+}
+
+.track-name {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.track-counter {
+	font-size: 10.5px;
+	letter-spacing: 0.05em;
+	color: var(--muted);
+	white-space: nowrap;
+}
+
+.transport-spacer {
+	flex: 1;
+}
+
 .player-overlay {
 	position: absolute;
 	bottom: 12px;
