@@ -31,3 +31,5 @@ vite.config.ts.timestamp-*
 .playwright-cli/
 .zcode/plans/
 .vscode/
+.zcodeignore
+AGENTS.md
