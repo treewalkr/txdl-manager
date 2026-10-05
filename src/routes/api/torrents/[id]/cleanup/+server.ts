@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { deleteJunk, scanJunk } from '$lib/server/cleanup';
 import { fail } from '$lib/server/http';
+import { invalidateJunk } from '$lib/server/junk-sweep';
 import { getTorrentDetail } from '$lib/server/transmission';
 
 export const POST: RequestHandler = async ({ params, request }) => {
@@ -22,7 +23,9 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		if (!torrent) return json({ error: 'torrent not found' }, { status: 404 });
 
 		if (mode === 'delete') {
-			return json(await deleteJunk(torrent));
+			const result = await deleteJunk(torrent);
+			invalidateJunk([id]); // the sweep cache can't see the disk change itself
+			return json(result);
 		}
 		return json(await scanJunk(torrent));
 	} catch (e) {

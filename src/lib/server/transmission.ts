@@ -154,12 +154,16 @@ export async function getTorrents(): Promise<Torrent[]> {
 	return r.torrents ?? [];
 }
 
-export async function getTorrentDetail(id: number): Promise<Torrent | null> {
+export async function getTorrentDetails(ids: number[]): Promise<Torrent[]> {
 	const r = await client.rpc<{ torrents: Torrent[] }>('torrent-get', {
 		fields: [...TORRENT_DETAIL_FIELDS],
-		ids: [id]
+		ids
 	});
-	return r.torrents?.[0] ?? null;
+	return r.torrents ?? [];
+}
+
+export async function getTorrentDetail(id: number): Promise<Torrent | null> {
+	return (await getTorrentDetails([id]))[0] ?? null;
 }
 
 export async function setFilesWanted(id: number, indices: number[], wanted: boolean): Promise<void> {

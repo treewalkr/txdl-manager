@@ -41,19 +41,23 @@ export function statusInfo(t: Torrent): StatusInfo {
 }
 
 /** Coarse group used by the list filter chips (a torrent can match several). */
-export type FilterKey = 'all' | 'hr' | 'downloading' | 'seeding' | 'paused' | 'complete';
+export type FilterKey = 'all' | 'hr' | 'junk' | 'downloading' | 'seeding' | 'paused' | 'complete';
 
 export function matchesFilter(
 	t: Torrent,
 	filter: FilterKey,
 	/** Torrent ids manually removed from the HR group. */
-	hrExcluded: number[] = []
+	hrExcluded: number[] = [],
+	/** Torrent ids with reclaimable junk bytes (server junk sweep). */
+	junkIds?: ReadonlySet<number>
 ): boolean {
 	switch (filter) {
 		case 'all':
 			return true;
 		case 'hr':
 			return hrInfo(t, hrExcluded.includes(t.id)).inGroup;
+		case 'junk':
+			return junkIds?.has(t.id) ?? false;
 		case 'downloading':
 			return statusInfo(t).key === 'downloading' || statusInfo(t).key === 'queued';
 		case 'seeding':

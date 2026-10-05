@@ -493,7 +493,8 @@ tbody tr.selected .st-paused {
 }
 
 tbody tr.selected .hr-badge,
-tbody tr.selected .ready-badge {
+tbody tr.selected .ready-badge,
+tbody tr.selected .junk-badge {
 	color: var(--sel-ink);
 }
 
@@ -644,7 +645,8 @@ tbody tr.selected .ready-badge {
 }
 
 .name-cell .hr-badge,
-.name-cell .ready-badge {
+.name-cell .ready-badge,
+.name-cell .junk-badge {
 	flex: none;
 }
 
@@ -733,6 +735,16 @@ tr.hr td:first-child {
 	font-size: 10.5px;
 	color: var(--green);
 	white-space: nowrap;
+}
+
+/* junk marker: amber like HR — cleanup owed, read as terminal output */
+.junk-badge {
+	display: inline-block;
+	margin-left: 10px;
+	font-size: 10.5px;
+	color: var(--amber);
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
 }
 
 tr.ready td:first-child {

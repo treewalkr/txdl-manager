@@ -150,6 +150,7 @@
 	const FILTERS: { key: FilterKey; label: string }[] = [
 		{ key: 'all', label: 'All' },
 		{ key: 'hr', label: 'HR' },
+		{ key: 'junk', label: 'Junk' },
 		{ key: 'downloading', label: 'Downloading' },
 		{ key: 'seeding', label: 'Seeding' },
 		{ key: 'paused', label: 'Paused' },
@@ -158,10 +159,11 @@
 
 	const hrOf = (t: Torrent) => hrInfo(t, store.hrExcluded.includes(t.id));
 	const readyOf = (t: Torrent) => isArchiveReady(t, store.hrExcluded.includes(t.id));
+	const junkIds = $derived(new Set(Object.keys(store.junk).map(Number)));
 
 	const filtered = $derived.by(() => {
 		const q = query.trim().toLowerCase();
-		let list = store.torrents.filter((t) => matchesFilter(t, filter, store.hrExcluded));
+		let list = store.torrents.filter((t) => matchesFilter(t, filter, store.hrExcluded, junkIds));
 		if (q) list = list.filter((t) => t.name.toLowerCase().includes(q));
 		const key = sortKey;
 		const dir = sortDir;
@@ -193,6 +195,7 @@
 	const counts = $derived({
 		all: store.torrents.length,
 		hr: store.torrents.filter((t) => matchesFilter(t, 'hr', store.hrExcluded)).length,
+		junk: store.torrents.filter((t) => matchesFilter(t, 'junk', store.hrExcluded, junkIds)).length,
 		downloading: store.torrents.filter((t) => matchesFilter(t, 'downloading')).length,
 		seeding: store.torrents.filter((t) => matchesFilter(t, 'seeding')).length,
 		paused: store.torrents.filter((t) => matchesFilter(t, 'paused')).length,
@@ -204,7 +207,7 @@
 	const dirTotals = $derived.by(() => {
 		const m = new Map<string, number>();
 		for (const t of store.torrents) {
-			if (!matchesFilter(t, filter, store.hrExcluded)) continue;
+			if (!matchesFilter(t, filter, store.hrExcluded, junkIds)) continue;
 			m.set(t.downloadDir, (m.get(t.downloadDir) ?? 0) + 1);
 		}
 		return m;
@@ -836,6 +839,15 @@
 									{/if}
 									{#if readyOf(t)}
 										<span class="ready-badge" title={archiveReadyHint()}>✓ ready</span>
+									{/if}
+									{#if store.junk[t.id]}
+										{@const j = store.junk[t.id]}
+										<span
+											class="junk-badge"
+											title="{j.count} unselected file{j.count === 1 ? '' : 's'} still on disk — open the torrent to clean up ({fmtBytes(j.bytes)} reclaimable)"
+										>
+											✦ {fmtBytes(j.bytes)} junk
+										</span>
 									{/if}
 								</div>
 							</td>

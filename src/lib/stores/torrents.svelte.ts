@@ -10,6 +10,8 @@ class TorrentStore {
 	hrExcluded = $state<number[]>([]);
 	/** Download locations enabled for junk cleanup (persisted server-side). */
 	locations = $state<string[]>([]);
+	/** Real on-disk junk bytes per torrent (server sweep; absent id = none). */
+	junk = $state<Record<number, { bytes: number; count: number }>>({});
 	detail = $state<Torrent | null>(null);
 	connected = $state(false);
 	error = $state<string | null>(null);
@@ -18,6 +20,7 @@ class TorrentStore {
 
 	#timer: ReturnType<typeof setInterval> | null = null;
 	#inFlight = false;
+	#junkInFlight = false;
 	#detailId: number | null = null;
 	#onVisibility = () => {
 		if (document.hidden) this.stopPolling();
@@ -62,6 +65,25 @@ class TorrentStore {
 		}
 	};
 
+	/** Junk indicators for the list rows (server-side sweep, cached there —
+	 *  independent of the 2s poll). */
+	refreshJunk = async () => {
+		if (this.#junkInFlight) return;
+		this.#junkInFlight = true;
+		try {
+			const res = await fetch('/api/junk');
+			const body = await res.json();
+			if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+			const junk: Record<number, { bytes: number; count: number }> = {};
+			for (const e of body.entries ?? []) junk[e.id] = { bytes: e.bytes, count: e.count };
+			this.junk = junk;
+		} catch {
+			// auxiliary signal — keep the last badges on transient failures
+		} finally {
+			this.#junkInFlight = false;
+		}
+	};
+
 	startPolling = () => {
 		if (this.#timer) return;
 		this.#timer = setInterval(() => {
@@ -86,6 +108,7 @@ class TorrentStore {
 
 	start = () => {
 		this.startPolling();
+		void this.refreshJunk();
 		return () => this.stopPolling();
 	};
 
@@ -107,6 +130,7 @@ class TorrentStore {
 			if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
 			this.setFlash(json?.message ?? 'Done');
 			await this.refresh();
+			if (body.action === 'set-files') void this.refreshJunk(); // deselection changed the junk set
 			return true;
 		} catch (e) {
 			this.setFlash(e instanceof Error ? e.message : String(e), 'error');
@@ -141,7 +165,10 @@ class TorrentStore {
 			});
 			const json = await res.json();
 			if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-			if (mode === 'delete') await this.refresh();
+			if (mode === 'delete') {
+				await this.refresh();
+				void this.refreshJunk();
+			}
 			return json;
 		} catch (e) {
 			this.setFlash(e instanceof Error ? e.message : String(e), 'error');
@@ -201,7 +228,10 @@ class TorrentStore {
 				: await fetch(`/api/locations?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
 			const json = await res.json().catch(() => null);
 			if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
-			if (Array.isArray(json?.enabled)) this.locations = json.enabled;
+			if (Array.isArray(json?.enabled)) {
+				this.locations = json.enabled;
+				void this.refreshJunk(); // enabling a location can surface new junk
+			}
 			this.setFlash(json?.message ?? 'Done');
 			return true;
 		} catch (e) {
