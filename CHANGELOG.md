@@ -2,6 +2,11 @@
 
 Notable changes. Versions are git tags — `git tag` lists them, `git describe --tags` locates the current build between them.
 
+## [0.3.0] — 2026-10-05
+
+### Added
+- Junk indicators in the torrent list: a cached server-side sweep reports real reclaimable bytes per torrent as an amber badge, with a `Junk` filter chip to show only torrents worth cleaning.
+
 ## [0.2.0] — 2026-10-02
 
 ### Added
