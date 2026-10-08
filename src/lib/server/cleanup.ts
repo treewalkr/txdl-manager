@@ -1,6 +1,6 @@
 import { rmdir, stat, unlink } from 'node:fs/promises';
 import { posix } from 'node:path';
-import type { CleanupDeleteResult, CleanupScanResult, FileStat, Torrent, TorrentFile } from '$lib/types';
+import type { CleanupDeleteResult, CleanupFailure, CleanupScanResult, FileStat, Torrent, TorrentFile } from '$lib/types';
 import type { PathMapping } from './config';
 import { env } from './config';
 import { getLocations, locationEnabled } from './locations';
@@ -101,26 +101,48 @@ async function pruneEmptyDirs(dir: string, stopAt: string): Promise<void> {
 	}
 }
 
+export interface FileDeleteResult {
+	deleted: number;
+	freed: number;
+	failed: CleanupFailure[];
+	/** True when the torrent's location blocks all deletion (unmapped or not enabled). */
+	blocked: boolean;
+}
+
 /**
- * Delete every unselected file of this torrent that exists on disk — checking
- * both the final name and its ".part" variant. The torrent detail must be
- * fetched fresh by the caller right before calling (we never trust stale UI
- * state for a destructive operation).
+ * Delete specific files of this torrent that are deselected (wanted=false) —
+ * checking both the final name and its ".part" variant. Indices that are
+ * selected again are reported as failures and never touched. The torrent
+ * detail must be fetched fresh by the caller right before calling (we never
+ * trust stale UI state for a destructive operation).
  */
-export async function deleteJunk(detail: Torrent): Promise<CleanupDeleteResult> {
+export async function deleteFiles(detail: Torrent, indices: number[]): Promise<FileDeleteResult> {
 	const cfg = env();
-	const scan = await scanJunk(detail);
-	const result: CleanupDeleteResult = { ...scan, deleted: 0, freed: 0, failed: [] };
-	if (!scan.mapped || !scan.enabled) return result;
+	const result: FileDeleteResult = { deleted: 0, freed: 0, failed: [], blocked: false };
+	if (
+		!mappingFor(detail.downloadDir, cfg.mappings) ||
+		!locationEnabled(detail.downloadDir, await getLocations())
+	) {
+		result.blocked = true;
+		return result;
+	}
 
 	// Pruning never climbs above the torrent's own download dir, even though
 	// the mounted root it sits under may be much broader.
 	const locationRootReal = await realpathSafe(mapHostPath(detail.downloadDir, cfg.mappings));
 
-	for (const entry of scan.junk) {
+	const files = detail.files ?? [];
+	const stats = detail.fileStats ?? [];
+	for (const index of indices) {
+		const file = files[index];
+		if (!file) continue;
+		if (stats[index]?.wanted !== false) {
+			result.failed.push({ name: file.name, error: 'file is selected again — skipped' });
+			continue;
+		}
 		try {
 			let removedAny = false;
-			for (const variant of diskVariants(entry.name)) {
+			for (const variant of diskVariants(file.name)) {
 				const hostPath = posix.join(detail.downloadDir, variant);
 				const { mapped, root } = mapFile(hostPath, cfg.mappings);
 				const resolved = await resolveContained(root, mapped);
@@ -133,8 +155,23 @@ export async function deleteJunk(detail: Torrent): Promise<CleanupDeleteResult> 
 			}
 			if (removedAny) result.deleted++;
 		} catch (e) {
-			result.failed.push({ name: entry.name, error: e instanceof Error ? e.message : String(e) });
+			result.failed.push({ name: file.name, error: e instanceof Error ? e.message : String(e) });
 		}
 	}
+	return result;
+}
+
+/**
+ * Delete every unselected file of this torrent that exists on disk. The
+ * torrent detail must be fetched fresh by the caller right before calling.
+ */
+export async function deleteJunk(detail: Torrent): Promise<CleanupDeleteResult> {
+	const scan = await scanJunk(detail);
+	const result: CleanupDeleteResult = { ...scan, deleted: 0, freed: 0, failed: [] };
+	if (!scan.mapped || !scan.enabled) return result;
+	const del = await deleteFiles(detail, scan.junk.map((j) => j.index));
+	result.deleted = del.deleted;
+	result.freed = del.freed;
+	result.failed = del.failed;
 	return result;
 }

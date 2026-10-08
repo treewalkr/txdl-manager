@@ -64,13 +64,16 @@ function makeTorrent(overrides) {
 }
 
 function withFiles(t, specs) {
+	// deselected files keep whatever was downloaded before deselecting (real
+	// daemons don't zero bytesCompleted) — junk of a finished torrent is
+	// complete, junk of a downloading one counts as not started
 	t.files = specs.map(([name, length, wanted]) => ({
 		name,
 		length,
-		bytesCompleted: wanted === false ? 0 : Math.floor(length * t.percentDone)
+		bytesCompleted: wanted === false && t.percentDone < 1 ? 0 : Math.floor(length * t.percentDone)
 	}));
 	t.fileStats = specs.map(([name, length, wanted]) => ({
-		bytesCompleted: wanted === false ? 0 : Math.floor(length * t.percentDone),
+		bytesCompleted: wanted === false && t.percentDone < 1 ? 0 : Math.floor(length * t.percentDone),
 		wanted: wanted !== false,
 		priority: 0
 	}));
@@ -152,7 +155,10 @@ let torrents = [
 			['Old.Documentary.Collection.2019/part1.avi', 700 * MiB, true],
 			['Old.Documentary.Collection.2019/part2.avi', 700 * MiB, true],
 			['Old.Documentary.Collection.2019/bonus/deleted-scenes.mkv', 1 * GiB + 40 * MiB, false], // junk
-			['Old.Documentary.Collection.2019/subtitles.zip', 84 * MiB, false] // junk
+			['Old.Documentary.Collection.2019/subtitles.zip', 84 * MiB, false], // junk
+			['Old.Documentary.Collection.2019/poster.jpg', 70, true],
+			['Old.Documentary.Collection.2019/trailer.mp4', 114836, true],
+			['Old.Documentary.Collection.2019/clip.mkv', 113331, true]
 		]
 	),
 	makeTorrent({
@@ -175,7 +181,10 @@ let torrents = [
 
 function syncFiles(t) {
 	for (let i = 0; i < t.files.length; i++) {
-		const done = t.fileStats[i].wanted === false ? 0 : Math.floor(t.files[i].length * t.percentDone);
+		const done =
+			t.fileStats[i].wanted === false && t.percentDone < 1
+				? 0
+				: Math.floor(t.files[i].length * t.percentDone);
 		t.files[i].bytesCompleted = done;
 		t.fileStats[i].bytesCompleted = done;
 	}

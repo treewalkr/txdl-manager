@@ -36,6 +36,9 @@
 		<a class="brand" href="/">
 			txdl<span class="brand-sub">transmission manager</span>
 		</a>
+		<a class="top-link" href="/review" title="Review every video/image across all torrents — keep or reject">
+			review
+		</a>
 		<div class="top-stats" class:live={store.connected}>
 			<span title="Total download speed">↓ {fmtSpeed(downTotal)}</span>
 			<span title="Total upload speed">↑ {fmtSpeed(upTotal)}</span>

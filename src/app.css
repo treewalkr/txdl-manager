@@ -1602,6 +1602,283 @@ span.file-play {
 	background: transparent;
 }
 
+/* ---------- media review ---------- */
+
+/* topbar entry */
+.top-link {
+	color: var(--dim);
+	font-size: 11.5px;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+.top-link:hover {
+	color: var(--accent);
+}
+
+.review-page {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	min-height: calc(100vh - 150px);
+}
+
+.review-head {
+	display: flex;
+	align-items: baseline;
+	gap: 14px;
+	flex-wrap: wrap;
+}
+
+.review-head h2 {
+	font-size: 14px;
+	margin: 0;
+	letter-spacing: 0.06em;
+}
+
+.review-head .back {
+	color: var(--accent);
+	white-space: nowrap;
+}
+
+.review-prog {
+	font-variant-numeric: tabular-nums;
+}
+
+.review-head-right {
+	margin-left: auto;
+}
+
+.review-stage {
+	flex: 1;
+	min-height: 320px;
+	position: relative;
+}
+
+.review-card {
+	position: absolute;
+	inset: 0;
+	border: 1px solid var(--border);
+	background: var(--panel);
+	display: flex;
+	flex-direction: column;
+}
+
+/* the card waiting behind the current one — outline only, no media loading */
+.review-next {
+	align-items: center;
+	justify-content: center;
+	transform: translateY(7px) scale(0.99);
+	opacity: 0.5;
+	pointer-events: none;
+	padding: 12px;
+	overflow: hidden;
+}
+
+.review-current {
+	z-index: 2;
+	cursor: grab;
+	touch-action: none;
+	user-select: none;
+	-webkit-user-select: none;
+	transition: transform 0.12s ease-out;
+}
+
+.review-current.dragging {
+	transition: none;
+	cursor: grabbing;
+}
+
+.review-media-wrap {
+	flex: 1;
+	min-height: 0;
+	position: relative;
+	background: #050706;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	overflow: hidden;
+}
+
+.review-media {
+	max-width: 100%;
+	max-height: 100%;
+	object-fit: contain;
+	display: block;
+}
+
+.review-play {
+	width: 64px;
+	height: 64px;
+	border: 1px solid var(--border);
+	background: var(--panel);
+	color: var(--text);
+	font-size: 20px;
+	cursor: pointer;
+}
+
+.review-play:hover {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+.review-video-hint {
+	position: absolute;
+	bottom: 8px;
+	font-size: 11px;
+}
+
+.review-media-err {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--red);
+	background: var(--bg);
+	padding: 20px;
+	text-align: center;
+}
+
+/* decision stamps — color as signal, edges follow the drag */
+.review-stamp {
+	position: absolute;
+	top: 14px;
+	font-size: 14px;
+	font-weight: 700;
+	letter-spacing: 0.1em;
+	padding: 3px 10px;
+	border: 1px solid currentColor;
+	pointer-events: none;
+}
+
+.review-stamp.nope {
+	left: 14px;
+	color: var(--red);
+}
+
+.review-stamp.like {
+	right: 14px;
+	color: var(--green);
+}
+
+.review-meta {
+	display: flex;
+	align-items: baseline;
+	gap: 10px;
+	padding: 8px 12px;
+	border-top: 1px solid var(--border);
+	min-width: 0;
+}
+
+.review-file {
+	font-weight: 700;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	min-width: 0;
+}
+
+.review-open {
+	color: var(--accent);
+	white-space: nowrap;
+}
+
+.review-from {
+	padding: 0 12px 9px;
+	font-size: 11.5px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.review-actions {
+	display: flex;
+	gap: 10px;
+	justify-content: center;
+	flex-wrap: wrap;
+}
+
+.btn.green {
+	background: transparent;
+	border-color: color-mix(in srgb, var(--green) 55%, transparent);
+	color: var(--green);
+}
+
+.btn.green:hover:not(:disabled) {
+	background: color-mix(in srgb, var(--green) 14%, transparent);
+	border-color: var(--green);
+}
+
+.review-foot {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	flex-wrap: wrap;
+	border-top: 1px solid var(--border);
+	padding-top: 10px;
+}
+
+.review-rej {
+	color: var(--amber);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.review-foot .err-list {
+	flex-basis: 100%;
+	margin: 0;
+}
+
+/* ---------- review decisions (management table) ---------- */
+
+.review-link {
+	color: var(--dim);
+	font-size: 11.5px;
+	white-space: nowrap;
+}
+
+.review-link:hover {
+	color: var(--accent);
+}
+
+.manage-table {
+	min-width: 720px;
+}
+
+.dec-badge {
+	font-size: 10.5px;
+	font-weight: 600;
+	letter-spacing: 0.05em;
+	white-space: nowrap;
+}
+
+.dec-undecided {
+	color: var(--dim);
+}
+
+.dec-kept {
+	color: var(--green);
+}
+
+.dec-removed {
+	color: var(--amber);
+}
+
+.dec-deleted {
+	color: var(--red);
+}
+
+.manage-actions .btn {
+	margin-left: 6px;
+}
+
+.manage-table tbody tr.rm-deleted .file-path {
+	text-decoration: line-through;
+	text-decoration-color: color-mix(in srgb, var(--red) 60%, transparent);
+}
+
 /* ---------- pointer / viewport adaptation ---------- */
 
 @media (max-width: 520px) {
@@ -1648,6 +1925,7 @@ span.file-play {
 	.btn,
 	.icon-btn,
 	.th-arrow,
+	.review-current,
 	tbody tr,
 	input[type='text'],
 	input[type='search'],

@@ -2,7 +2,7 @@ import { describe, expect, it, beforeAll, afterAll } from 'bun:test';
 import { mkdtemp, mkdir, writeFile, symlink, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { deleteJunk, pickJunk, scanJunk } from '../src/lib/server/cleanup';
+import { deleteFiles, deleteJunk, pickJunk, scanJunk } from '../src/lib/server/cleanup';
 import { setLocationEnabled } from '../src/lib/server/locations';
 import type { Torrent } from '../src/lib/types';
 
@@ -183,6 +183,34 @@ describe('scanJunk / deleteJunk', () => {
 			expect(scan.junk).toEqual([]);
 		} finally {
 			setEnv();
+		}
+	});
+});
+
+describe('deleteFiles', () => {
+	it('deletes only requested unselected indices; refuses files that are selected again', async () => {
+		await writeFixtures(dataRoot, false);
+		const result = await deleteFiles(makeDetail(), [0, 1]);
+		expect(result.blocked).toBe(false);
+		expect(result.deleted).toBe(1);
+		expect(result.freed).toBeGreaterThan(0);
+		expect(result.failed.map((f) => f.name)).toEqual(['T/keep.mkv']);
+		await expect(stat(join(dataRoot, 'T/keep.mkv'))).resolves.toBeTruthy();
+		await expect(stat(join(dataRoot, 'T/junk1.bin'))).rejects.toThrow();
+		// index 2 was not requested — its junk survives
+		await expect(stat(join(dataRoot, 'T/sub/junk2.bin'))).resolves.toBeTruthy();
+	});
+
+	it('reports blocked instead of touching anything when the location is not enabled', async () => {
+		await writeFixtures(dataRoot, false);
+		await setLocationEnabled(HOST_DIR, false);
+		try {
+			const result = await deleteFiles(makeDetail(), [1]);
+			expect(result.blocked).toBe(true);
+			expect(result.deleted).toBe(0);
+			await expect(stat(join(dataRoot, 'T/junk1.bin'))).resolves.toBeTruthy();
+		} finally {
+			await setLocationEnabled(HOST_DIR, true);
 		}
 	});
 });

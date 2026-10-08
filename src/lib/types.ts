@@ -94,3 +94,37 @@ export interface CleanupDeleteResult extends CleanupScanResult {
 	freed: number;
 	failed: CleanupFailure[];
 }
+
+/* ---------- media review ---------- */
+
+export interface ReviewItem {
+	torrentId: number;
+	hashString: string;
+	torrentName: string;
+	downloadDir: string;
+	/** Index into the torrent's files — the stream [index] param / set-files indices. */
+	index: number;
+	/** File path relative to the torrent's downloadDir. */
+	name: string;
+	length: number;
+	kind: 'video' | 'image';
+}
+
+export interface ReviewMedia {
+	/** Fully-downloaded media still awaiting a keep/remove decision. */
+	deck: ReviewItem[];
+	/** Media already rejected (deselected in Transmission) — the unwanted list. */
+	rejected: ReviewItem[];
+}
+
+export interface ReviewSkipped {
+	torrent: string;
+	reason: string;
+}
+
+export interface ReviewClearResult {
+	deleted: number;
+	freed: number;
+	failed: CleanupFailure[];
+	skipped: ReviewSkipped[];
+}
