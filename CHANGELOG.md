@@ -2,6 +2,12 @@
 
 Notable changes. Versions are git tags — `git tag` lists them, `git describe --tags` locates the current build between them.
 
+## [0.4.0] — 2026-10-09
+
+### Added
+- Media review: swipe through every fully-downloaded video and image across all torrents — drag or ←/→ to keep or reject. Rejects are deselected in Transmission (joining the junk list) and cleared from disk in one confirmable action.
+- Decisions manager (`/review/manage`): filter and search every media file by state — undecided, kept, removed, deleted — and change any decision: unkeep, restore, delete singles, or bulk-clear.
+
 ## [0.3.0] — 2026-10-05
 
 ### Added
