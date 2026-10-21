@@ -306,6 +306,18 @@
 		return Number.isInteger(id) ? id : null;
 	}
 
+	/** Shift-click first extends the browser's own text selection, which the
+	 *  click guard would then mistake for a deliberate one — suppress it on
+	 *  rows so the range selection gets through. */
+	function onWindowMousedown(e: MouseEvent) {
+		if (!e.shiftKey || e.button !== 0) return;
+		const el = e.target instanceof Element ? e.target : null;
+		if (el?.closest('a, button, input, select, textarea, label')) return;
+		if (rowIdFrom(e) === null) return;
+		e.preventDefault();
+		window.getSelection()?.removeAllRanges();
+	}
+
 	function onWindowClick(e: MouseEvent) {
 		ctx = null;
 		const el = e.target instanceof Element ? e.target : null;
@@ -660,6 +672,7 @@
 </script>
 
 <svelte:window
+	onmousedown={onWindowMousedown}
 	onclick={onWindowClick}
 	ondblclick={onWindowDblclick}
 	oncontextmenu={onWindowContext}
