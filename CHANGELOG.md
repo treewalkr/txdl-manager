@@ -2,6 +2,11 @@
 
 Notable changes. Versions are git tags — `git tag` lists them, `git describe --tags` locates the current build between them.
 
+## [0.4.1] — 2026-10-21
+
+### Fixed
+- Shift+click range selection now works in the torrent list: the browser's native text-selection grab on shift+mousedown no longer swallows the click. Deliberate drag-to-select text still works.
+
 ## [0.4.0] — 2026-10-09
 
 ### Added
